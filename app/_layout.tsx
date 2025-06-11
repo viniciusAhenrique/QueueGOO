@@ -7,6 +7,12 @@ export default function RootLayout() {
       <Stack.Screen
       name="index"
       options={{
+        headerShown: false
+      }}
+      />
+      <Stack.Screen
+      name="mapa"
+      options={{
         title: 'Queu&Go',
         headerStyle: {
           backgroundColor: "#4FC3F7",
