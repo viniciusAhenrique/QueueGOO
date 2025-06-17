@@ -18,6 +18,7 @@ export default function Mapa() {
       showsUserLocation
     >
         <Marker
+        pinColor='blue'
           coordinate={{
             latitude: -25.441954450902056,
             longitude: -49.16176739594576
