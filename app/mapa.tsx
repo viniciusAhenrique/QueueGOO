@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
 import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
+import { ModalRestaurante } from './components/modalRestaurante';
 
 export default function Mapa() {
   const [modalVisible, setModalVisible] = useState(false);
+  const router = useRouter();
+
+  const restaurante = () => {
+      router.push('./madalosso');
+  };
+
   return (
     <View style={styles.container}>
       <MapView 
@@ -89,16 +96,10 @@ export default function Mapa() {
           onRequestClose={() => {
             setModalVisible(!modalVisible);
           }}>
-            <View style={styles.modalView}>
-              <Text style={styles.modalText}>Restaurante Madalosso</Text>
-              <Text style={styles.modalText}>★ 4.8</Text>
-              <Link style={styles.button} href="/madalosso">Saiba mais</Link>
-              <Pressable
-                style={[styles.button, styles.buttonClose]}
-                onPress={() => setModalVisible(!modalVisible)}>
-                <Text style={styles.textStyle}>Hide Modal</Text>
-              </Pressable>
-            </View>
+            <ModalRestaurante
+              fecharModal={ () => setModalVisible(false) }
+              menuRestaurante={restaurante}
+            />
         </Modal>
     </View>
   );
@@ -133,11 +134,6 @@ const styles = StyleSheet.create({
   },
   buttonClose: {
     backgroundColor: '#2196F3',
-  },
-  textStyle: {
-    color: 'white',
-    fontWeight: 'bold',
-    textAlign: 'center',
   },
   modalText: {
     marginBottom: 15,
