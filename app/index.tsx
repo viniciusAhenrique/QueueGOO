@@ -1,26 +1,45 @@
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import React from 'react';
-import { View, StyleSheet, Image } from 'react-native';
+import { SafeAreaView, View, StyleSheet, Image, Text } from 'react-native';
+import { Button } from 'react-native-paper';
 
 
 export default function App() {
+    const router = useRouter();
+  
+    const acessarLogin = () => {
+      router.push('./login');
+    };
+
+    const acessarCadastro = () => {
+      router.push('./cadastro');
+    };
+
+    const acessarConvidado = () => {
+      router.push('./mapa');
+    };
+
     return(
-        <View style={stylesinicio.container}>
-            <Image source={require("../assets/images/logo-queuego.png")} style={{ width: "70%", height: "60%" }}/>
-            <Link
-                href="./login"
+        <SafeAreaView style={stylesinicio.container}>
+            <Image source={require("../assets/images/logo-queuego.png")} style={{ width: "95%", height: "50%" }}/>
+            <Button
+                onPress={acessarLogin}
+                labelStyle={{ fontSize: 18 }}
                 style={stylesinicio.buttonlogin}
+                textColor='#ffffff'
             >
-                Entrar
-            </Link>
-            <Link
-                href="./cadastro"
+              Entrar
+            </Button>
+            <Button
+                onPress={acessarCadastro}
+                labelStyle={{ fontSize: 18 }}
                 style={stylesinicio.buttoncadastro}
+                textColor='#000000'
             >
-                Cadastrar
-            </Link>
-            <Link style={stylesinicio.convidado} href="./mapa">Continuar como convidado</Link>
-        </View>
+              Cadastrar
+            </Button>
+            <Text style={stylesinicio.convidado} onPress={acessarConvidado}>Continuar como convidado</Text>
+        </SafeAreaView>
     );
 }
 
@@ -29,35 +48,36 @@ const stylesinicio = StyleSheet.create({
         backgroundColor: "#4FC3F7",
         justifyContent: "center",
         alignItems: "center",
+        height: "100%",
     },
     buttonlogin: {
         margin: 4,
-        width: '80%',
-        height: '10%',
+        width: '90%',
+        height: '7%',
         borderRadius: 10,
         backgroundColor: '#1e232c',
         borderColor: '#000000',
-        color: '#ffffff',
-        textAlign: "center",
+        borderWidth: 1,
+        justifyContent: "center",
         fontFamily: 'Urbanist',
-        fontSize: 15
     },
     buttoncadastro: {
         margin: 4,
-        width: '80%',
-        height: '10%',
+        marginTop: 10,
+        marginBottom: 50,
+        width: '90%',
+        height: '7%',
         borderRadius: 10,
         backgroundColor: '#ffffff',
         borderColor: '#000000',
-        color: '#000000',
-        textAlign: "center",
+        borderWidth: 1,
+        justifyContent: "center",
         fontFamily: 'Urbanist',
-        fontSize: 15
     },
     convidado: {
         textDecorationLine: 'underline',
         fontWeight: 'bold',
         fontFamily: 'Urbanist',
         fontSize: 15
-    }
+    },
 });
