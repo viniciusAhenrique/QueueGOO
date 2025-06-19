@@ -28,7 +28,6 @@ export default function produto() {
                 title="Reservar"
                 onPress={() => Alert.alert('Reserva')}
             />
-            <Link style={styles.button} href="/mapa">Voltar para tela inicial</Link>
         </View>
     </ScrollView>
   );
