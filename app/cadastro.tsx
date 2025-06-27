@@ -9,65 +9,73 @@ export default function Cadastro() {
     const router = useRouter();
 
     const retornar = () => {
-        router.push('./');
+        router.push('./welcome');
+    };
+
+    const logarSe = () => {
+        router.push('./login');
     };
 
     return(
         <SafeAreaProvider>
-            <SafeAreaView style={styleslogin.container}>
-                <Button icon="arrow-left-circle" style={styleslogin.voltar} onPress={retornar}> </Button>
+            <SafeAreaView style={stylescadastro.container}>
+                <Button icon="arrow-left-circle" style={stylescadastro.voltar} onPress={retornar}> </Button>
                 {/*icone de voltar com seta em preto, fundo azul escuro e na superior esquerda*/}
-                <Text style={styleslogin.texto}>Olá! Se inscreva para começar</Text>
+                <Text style={stylescadastro.texto}>Olá! Se inscreva para começar</Text>
                 <TextInput
-                    style={styleslogin.input}
+                    style={stylescadastro.input}
                     placeholder="Nome de usuário"
                 />
                 <TextInput
-                    style={styleslogin.input}
+                    style={stylescadastro.input}
                     placeholder="E-mail"
                 />
                 <TextInput
-                    style={styleslogin.input}
+                    style={stylescadastro.input}
                     placeholder="Senha"
                 />
                 <TextInput
-                    style={styleslogin.input}
+                    style={stylescadastro.input}
                     placeholder="Confirmar senha"
                 />
                 <Link
                     href="./login"
-                    style={styleslogin.buttonlogin}
+                    style={stylescadastro.buttonlogin}
                 >
                     Registrar
                 </Link>
-                <Text>Já tem uma conta? Entre agora</Text>
+                <View style={stylescadastro.textoRodapeContainer}>
+                    <Text style={stylescadastro.textoRodape1}>Já tem uma conta? </Text>
+                    <Text style={stylescadastro.textoRodape2} onPress={logarSe}>Entre agora</Text>
+                </View>
             </SafeAreaView>
         </SafeAreaProvider>
     );
 }
 
-const styleslogin = StyleSheet.create({
+const stylescadastro = StyleSheet.create({
     container: {
         backgroundColor: "#4FC3F7",
-        justifyContent: "center",
+        flex: 1,
+        flexDirection: "column",
+        justifyContent: "space-around",
+        alignItems: "center",
         height: "100%",
         paddingLeft: '5%',
     },
     buttonlogin: {
         margin: 4,
         width: '90%',
-        height: '10%',
+        height: '7%',
         borderRadius: 10,
         backgroundColor: '#1e232c',
         borderColor: '#000000',
+        borderWidth: 1,
         color: '#ffffff',
         textAlign: "center",
-        fontFamily: 'Urbanist',
-        fontSize: 15
-    },
-    convidado: {
-        fontStyle: 'italic',
-        fontWeight: 'bold',
+        fontFamily: 'Urbanist_600SemiBold',
+        fontSize: 18,
+        justifyContent: "center",
     },
     input: {
         height: '7%',
@@ -77,25 +85,30 @@ const styleslogin = StyleSheet.create({
         borderWidth: 1,
         padding: 10,
         backgroundColor: '#ffffff',
+        fontFamily: 'Urbanist_500Medium',
     },
     voltar: {
         color: '#1e232c',
         backgroundColor: "darkblue",
-    },
-    botoes: {
-        flex: 1,
-        alignSelf: "flex-end",
-        flexDirection: "row",
+        alignSelf: "flex-start",
     },
     texto: {
         fontSize: 30,
-        fontWeight: "bold",
+        fontFamily: 'Poppins_700Bold',
+        alignSelf: "flex-start",
     },
-    botoesapps: {
-        padding: 10,
-        backgroundColor: 'white',
-        borderRadius: 10,
-        height: '10%',
-        width: '10%',
-    }
+    textoRodape1: {
+        fontSize: 15,
+        fontFamily: 'Urbanist_500Medium',
+        color: '#1E232C',
+    },
+    textoRodape2: {
+        fontSize: 15,
+        fontFamily: 'Urbanist_700Bold',
+        color: '#0663EF',
+    },
+    textoRodapeContainer: {
+        paddingBottom: 20,
+        flexDirection: "row",
+    },
 });

@@ -1,7 +1,7 @@
 import React from "react";
 import { Image, StyleSheet, View } from "react-native";
 
-const Logo = require("../assets/images/logo.png");
+const Logo = require("../assets/images/logo-splash.png");
 
 export default function Splashscreen() {
   return (
@@ -18,7 +18,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#4FC3F7",
   },
   image: {
     width: 100,

@@ -1,7 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, StyleSheet, Text, SafeAreaView, View } from 'react-native';
 
-export function ModalRestaurante({ fecharModal, menuRestaurante } : {fecharModal:any, menuRestaurante:any}) {
+export default function ModalRestaurante({ fecharModal, menuRestaurante } : {fecharModal:any, menuRestaurante:any}) {
     return (
         <SafeAreaView style={stylesmodal.container}>
             <TouchableOpacity style={{ flex: 1, zIndex: 9 }} onPress={fecharModal}></TouchableOpacity>

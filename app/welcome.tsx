@@ -1,10 +1,10 @@
 import { Link, useRouter } from 'expo-router';
-import React from 'react';
-import { SafeAreaView, View, StyleSheet, Image, Text } from 'react-native';
+import React, { useCallback } from 'react';
+import { SafeAreaView, View, StyleSheet, Image, Text, ActivityIndicator } from 'react-native';
 import { Button } from 'react-native-paper';
 
-
 export default function Welcome() {
+
     const router = useRouter();
   
     const acessarLogin = () => {
@@ -24,7 +24,7 @@ export default function Welcome() {
             <Image source={require("../assets/images/logo-queuego.png")} style={{ width: "95%", height: "50%" }}/>
             <Button
                 onPress={acessarLogin}
-                labelStyle={{ fontSize: 18 }}
+                labelStyle={{ fontSize: 18, fontFamily: 'Urbanist_600SemiBold' }}
                 style={stylesinicio.buttonlogin}
                 textColor='#ffffff'
             >
@@ -32,7 +32,7 @@ export default function Welcome() {
             </Button>
             <Button
                 onPress={acessarCadastro}
-                labelStyle={{ fontSize: 18 }}
+                labelStyle={{ fontSize: 18, fontFamily: 'Urbanist_600SemiBold' }}
                 style={stylesinicio.buttoncadastro}
                 textColor='#000000'
             >
@@ -59,7 +59,6 @@ const stylesinicio = StyleSheet.create({
         borderColor: '#000000',
         borderWidth: 1,
         justifyContent: "center",
-        fontFamily: 'Urbanist',
     },
     buttoncadastro: {
         margin: 4,
@@ -72,12 +71,10 @@ const stylesinicio = StyleSheet.create({
         borderColor: '#000000',
         borderWidth: 1,
         justifyContent: "center",
-        fontFamily: 'Urbanist',
     },
     convidado: {
         textDecorationLine: 'underline',
-        fontWeight: 'bold',
-        fontFamily: 'Urbanist',
+        fontFamily: 'Urbanist_700Bold',
         fontSize: 15
     },
 });
