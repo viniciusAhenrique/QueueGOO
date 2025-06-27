@@ -4,12 +4,16 @@ import { View, Text, StyleSheet, Image, Alert, TextInput } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from 'react-native-paper';
 
-
 export default function Login() {
+
     const router = useRouter();
 
     const retornar = () => {
-        router.push('./');
+        router.push('./welcome');
+    };
+
+    const inscreverSe = () => {
+        router.push('./cadastro');
     };
     
     return(
@@ -37,9 +41,28 @@ export default function Login() {
                 {/*//separador, com o texto "Ou entre com"*/}
                 {/*//3 botões lado a lado, com icones do facebook, google e apple*/}
                 <View style={styleslogin.botoes}>
-                    <Button icon="facebook" style={styleslogin.botoesapps}> </Button>
-                    <Button icon="google" style={styleslogin.botoesapps}> </Button>
-                    <Button icon="apple" style={styleslogin.botoesapps}> </Button>
+                    <Button 
+                        icon="facebook" 
+                        labelStyle={{ fontSize: 40 }} 
+                        style={styleslogin.botoesapps}
+                        contentStyle={{ paddingLeft: 20 }}
+                    > </Button>
+                    <Button 
+                        icon="google" 
+                        labelStyle={{ fontSize: 40 }} 
+                        style={styleslogin.botoesapps}
+                        contentStyle={{ paddingLeft: 20 }}
+                    > </Button>
+                    <Button
+                        icon="apple" 
+                        labelStyle={{ fontSize: 40 }}  
+                        style={styleslogin.botoesapps}
+                        contentStyle={{ paddingLeft: 20 }}
+                    > </Button>
+                </View>
+                <View style={styleslogin.textoRodapeContainer}>
+                    <Text style={styleslogin.textoRodape1}>Não tem conta? </Text>
+                    <Text style={styleslogin.textoRodape2} onPress={inscreverSe}>Inscreva-se agora</Text>
                 </View>
             </SafeAreaView>
         </SafeAreaProvider>
@@ -49,25 +72,26 @@ export default function Login() {
 const styleslogin = StyleSheet.create({
     container: {
         backgroundColor: "#4FC3F7",
-        justifyContent: "center",
+        flex: 1,
+        flexDirection: "column",
+        justifyContent: "space-around",
+        alignItems: "center",
         height: "100%",
         paddingLeft: '5%',
     },
     buttonlogin: {
         margin: 4,
         width: '90%',
-        height: '10%',
+        height: '7%',
         borderRadius: 10,
         backgroundColor: '#1e232c',
         borderColor: '#000000',
+        borderWidth: 1,
         color: '#ffffff',
         textAlign: "center",
-        fontFamily: 'Urbanist',
-        fontSize: 15
-    },
-    convidado: {
-        fontStyle: 'italic',
-        fontWeight: 'bold',
+        fontFamily: 'Urbanist_600SemiBold',
+        fontSize: 18,
+        justifyContent: "center",
     },
     input: {
         height: '7%',
@@ -77,25 +101,48 @@ const styleslogin = StyleSheet.create({
         borderWidth: 1,
         padding: 10,
         backgroundColor: '#ffffff',
+        fontFamily: 'Urbanist_500Medium',
     },
     voltar: {
         color: '#1e232c',
         backgroundColor: "darkblue",
+        alignSelf: "flex-start",
     },
     botoes: {
         flex: 1,
-        alignSelf: "flex-end",
+        alignItems: "center",
+        padding: "10%",
+        justifyContent: "space-around",
         flexDirection: "row",
+        gap: 30,
+        position: "sticky",
+        height: '10%',
     },
     texto: {
         fontSize: 30,
-        fontWeight: "bold",
+        fontFamily: 'Poppins_700Bold',
+        alignSelf: "flex-start",
     },
     botoesapps: {
-        padding: 10,
         backgroundColor: 'white',
         borderRadius: 10,
-        height: '10%',
-        width: '10%',
-    }
+        height: '20%',
+        width: '20%',
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    textoRodape1: {
+        fontSize: 15,
+        fontFamily: 'Urbanist_500Medium',
+        color: '#1E232C',
+    },
+    textoRodape2: {
+        fontSize: 15,
+        fontFamily: 'Urbanist_700Bold',
+        color: '#0663EF',
+    },
+    textoRodapeContainer: {
+        paddingBottom: 20,
+        flexDirection: "row",
+    },
 });

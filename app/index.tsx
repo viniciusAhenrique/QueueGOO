@@ -1,83 +1,17 @@
-import { Link, useRouter } from 'expo-router';
-import React from 'react';
-import { SafeAreaView, View, StyleSheet, Image, Text } from 'react-native';
-import { Button } from 'react-native-paper';
-
+import { StatusBar } from "expo-status-bar";
+import { StyleSheet, Text, View } from "react-native";
+import Splashscreen from "./splash";
+import Welcome from "./welcome";
+import { useEffect, useState } from "react";
+import React from "react";
 
 export default function App() {
-    const router = useRouter();
-  
-    const acessarLogin = () => {
-      router.push('./login');
-    };
+    const [isShowSplash, setIsShowSplash] = useState(true);
 
-    const acessarCadastro = () => {
-      router.push('./cadastro');
-    };
-
-    const acessarConvidado = () => {
-      router.push('./mapa');
-    };
-
-    return(
-        <SafeAreaView style={stylesinicio.container}>
-            <Image source={require("../assets/images/logo-queuego.png")} style={{ width: "95%", height: "50%" }}/>
-            <Button
-                onPress={acessarLogin}
-                labelStyle={{ fontSize: 18 }}
-                style={stylesinicio.buttonlogin}
-                textColor='#ffffff'
-            >
-              Entrar
-            </Button>
-            <Button
-                onPress={acessarCadastro}
-                labelStyle={{ fontSize: 18 }}
-                style={stylesinicio.buttoncadastro}
-                textColor='#000000'
-            >
-              Cadastrar
-            </Button>
-            <Text style={stylesinicio.convidado} onPress={acessarConvidado}>Continuar como convidado</Text>
-        </SafeAreaView>
-    );
+    useEffect(() => {
+        setTimeout(() => {
+            setIsShowSplash(false);
+        }, 2000);
+    }, []);
+  return <>{isShowSplash ? <Splashscreen /> : <Welcome />}</>;
 }
-
-const stylesinicio = StyleSheet.create({
-    container: {
-        backgroundColor: "#4FC3F7",
-        justifyContent: "center",
-        alignItems: "center",
-        height: "100%",
-    },
-    buttonlogin: {
-        margin: 4,
-        width: '90%',
-        height: '7%',
-        borderRadius: 10,
-        backgroundColor: '#1e232c',
-        borderColor: '#000000',
-        borderWidth: 1,
-        justifyContent: "center",
-        fontFamily: 'Urbanist',
-    },
-    buttoncadastro: {
-        margin: 4,
-        marginTop: 10,
-        marginBottom: 50,
-        width: '90%',
-        height: '7%',
-        borderRadius: 10,
-        backgroundColor: '#ffffff',
-        borderColor: '#000000',
-        borderWidth: 1,
-        justifyContent: "center",
-        fontFamily: 'Urbanist',
-    },
-    convidado: {
-        textDecorationLine: 'underline',
-        fontWeight: 'bold',
-        fontFamily: 'Urbanist',
-        fontSize: 15
-    },
-});
