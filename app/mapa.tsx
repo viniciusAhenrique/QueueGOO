@@ -9,7 +9,7 @@ export default function Mapa() {
   const router = useRouter();
 
   const restaurante = () => {
-      router.push('./Favoritos');
+      router.push('./madalosso');
   };
 
   return (

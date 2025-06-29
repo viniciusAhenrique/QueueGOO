@@ -4,10 +4,11 @@ import React = require("react");
 import Favoritos from "./Favoritos";
 
 export default function produto() {
-    const router=useRouter();
-    const favoritos=()=>{
-        router.push("./Favoritos")
+    const router = useRouter();
+    const favoritos = () => {
+        router.push("./Favoritos");
     };
+
   return (
     <ScrollView
     style={{
@@ -35,7 +36,7 @@ export default function produto() {
             />
             <Button
                 title="Reservar"
-                onPress={Favoritos}
+                onPress={favoritos}
             />
         </View>
     </ScrollView>
