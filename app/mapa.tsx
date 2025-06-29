@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React = require("react");
 import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { Link, useRouter } from 'expo-router';
 import ModalRestaurante from './components/modalRestaurante';
-
+import {useState} from 'react';
 export default function Mapa() {
   const [modalVisible, setModalVisible] = useState(false);
   const router = useRouter();
 
   const restaurante = () => {
-      router.push('./madalosso');
+      router.push('./Favoritos');
   };
 
   return (

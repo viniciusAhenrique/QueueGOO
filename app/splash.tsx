@@ -1,4 +1,4 @@
-import React from "react";
+import React = require("react");
 import { Image, StyleSheet, View } from "react-native";
 
 const Logo = require("../assets/images/logo-splash.png");

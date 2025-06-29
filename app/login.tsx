@@ -1,5 +1,5 @@
 import { Link, useRouter } from 'expo-router';
-import React from 'react';
+import React = require("react");
 import { View, Text, StyleSheet, Image, Alert, TextInput } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from 'react-native-paper';
@@ -115,7 +115,7 @@ const styleslogin = StyleSheet.create({
         justifyContent: "space-around",
         flexDirection: "row",
         gap: 30,
-        position: "sticky",
+        position: "static",
         height: '10%',
     },
     texto: {
