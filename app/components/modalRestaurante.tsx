@@ -1,96 +1,24 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { TouchableOpacity, StyleSheet, Text, SafeAreaView, View } from 'react-native';
 
-interface BalaoRestauranteProps {
-  nome: string;
-  tipo: string;
-  lotacao: number;        
-  placeId: string;
-  foto: string | null;    
-  onClose: () => void;
+export default function ModalRestaurante({ fecharModal, menuRestaurante } : {fecharModal:any, menuRestaurante:any}) {
+    return (
+        <SafeAreaView style={stylesmodal.container}>
+            <TouchableOpacity style={{ flex: 1, zIndex: 9 }} onPress={fecharModal}></TouchableOpacity>
+
+            <View style={stylesmodal.conteudo}>
+                <Text style={stylesmodal.modalText}>Restaurante Madalosso</Text>
+                <Text style={stylesmodal.modalText}>★ 4.8</Text>
+                <TouchableOpacity style={stylesmodal.botao} onPress={menuRestaurante}>
+                    <Text style={stylesmodal.texto}>Saiba mais</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={stylesmodal.botao} onPress={fecharModal}>
+                    <Text style={stylesmodal.texto}>Fechar</Text>
+                </TouchableOpacity>
+            </View>
+        </SafeAreaView>
+    );
 }
-
-const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
-  nome,
-  tipo,
-  lotacao,
-  placeId,
-  foto,
-  onClose,
-}) => {
-  const router = useRouter();
-
-  const calcularTempoEspera = (lot: number): string => {
-    if (lot > 80) return '30–50 min';
-    if (lot >= 40) return '15–30 min';
-    return '5–15 min';
-  };
-
-  const calcularPessoasNaFila = (lot: number): string => {
-    if (lot > 80) return '+30 pessoas';
-    if (lot >= 40) return '10–30 pessoas';
-    return 'menos de 10';
-  };
-
-  return (
-    <View style={styles.container}>
-      <View style={styles.box}>
-        <TouchableOpacity
-          style={styles.closeButton}
-          onPress={onClose}
-          accessibilityLabel="Fechar balão"
-        >
-          <MaterialIcons name="close" size={20} color="#666" />
-        </TouchableOpacity>
-
-        <Image
-          source={{ uri: foto ?? 'https://via.placeholder.com/300x150?text=Restaurante' }}
-          style={styles.imagem}
-          resizeMode="cover"
-        />
-
-        <View style={styles.conteudo}>
-          <Text style={styles.titulo} numberOfLines={1} ellipsizeMode="tail">
-            {nome}
-          </Text>
-          <Text style={styles.subtitulo}>{tipo}</Text>
-
-          <View style={styles.infoContainer}>
-            <Text style={styles.infoTexto}>
-              Lotação: <Text style={styles.destaque}>{lotacao}%</Text>
-            </Text>
-            <Text style={styles.infoTexto}> • Espera: {calcularTempoEspera(lotacao)}</Text>
-          </View>
-
-          <Text style={styles.infoFila}>
-            Fila estimada: <Text style={styles.destaque}>{calcularPessoasNaFila(lotacao)}</Text>
-          </Text>
-          <TouchableOpacity
-            style={styles.botao}
-            onPress={() =>
-              router.push({
-                pathname: '/restaurante',
-                params: {
-                  placeId,
-                  lotacao: lotacao.toString(), 
-                },
-              })
-            }
-            accessibilityRole="button"
-            accessibilityLabel={`Saiba mais sobre ${nome}`}
-          >
-            <Text style={styles.botaoTexto}>Saiba mais</Text>
-          </TouchableOpacity>
-
-        </View>
-      </View>
-
-      <View style={styles.seta} />
-    </View>
-  );
-};
 
 const styles = StyleSheet.create({
   container: {

@@ -1,11 +1,9 @@
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Alert, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { Link, useRouter } from 'expo-router';
+import React from 'react';
+import { View, Text, StyleSheet, Image, Alert, TextInput } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from 'react-native-paper';
-import { auth, db } from '../firebaseconfig';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+
 
 export default function Cadastro() {
   const router = useRouter();

@@ -1,40 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  View,
-  StyleSheet,
-  Dimensions,
-  TouchableOpacity,
-  Image,
-  Text,
-  Animated,
-  TouchableWithoutFeedback
-} from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import * as Location from 'expo-location';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/firebaseconfig';
-import BalaoRestaurante from './components/modalRestaurante';
+import React, { useState } from 'react';
+import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
+import { Link, useRouter } from 'expo-router';
+import ModalRestaurante from './components/modalRestaurante';
 
-const { width } = Dimensions.get('window');
-const menuWidth = width * 0.7;
-const GOOGLE_API_KEY = 'AIzaSyDr1HnkERYXONsiFrX0dTEa_cHcaWS3AQc';
-
-const mapStyleSemHoteis = [
-  { featureType: 'poi.hotel', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.place_of_worship', stylers: [{ visibility: 'off' }] },
-  { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
-];
-
-export default function MapaComTudo() {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [userLocation, setUserLocation] = useState(null);
-  const [lugares, setLugares] = useState([]);
-  const [lugarSelecionado, setLugarSelecionado] = useState(null);
-  const slideAnim = useState(new Animated.Value(-menuWidth))[0];
-  const mapRef = useRef(null);
+export default function Mapa() {
+  const [modalVisible, setModalVisible] = useState(false);
   const router = useRouter();
   const locationSubscription = useRef(null);
   const user = auth.currentUser;

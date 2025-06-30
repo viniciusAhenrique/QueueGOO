@@ -1,15 +1,6 @@
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import {
-	View,
-	Text,
-	StyleSheet,
-	TextInput,
-	Alert,
-	KeyboardAvoidingView,
-	Platform,
-	ScrollView,
-} from 'react-native';
+import { Link, useRouter } from 'expo-router';
+import React from 'react';
+import { View, Text, StyleSheet, Image, Alert, TextInput } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from 'react-native-paper';
 import { signInWithEmailAndPassword } from 'firebase/auth';
@@ -109,119 +100,80 @@ export default function Login() {
 	);
 }
 
-const styles = StyleSheet.create({
-	container: {
-		flex: 1,
-		backgroundColor: '#4FC3F7',
-	},
-	scroll: {
-		flexGrow: 1,
-		justifyContent: 'center',
-		alignItems: 'center',
-		paddingHorizontal: 25,
-		paddingBottom: 30,
-	},
-	voltar: {
-		backgroundColor: 'darkblue',
-		alignSelf: 'flex-start',
-		marginBottom: 20,
-	},
-	titulo: {
-		fontSize: 28,
-		fontFamily: 'Poppins_700Bold',
-		color: '#1e232c',
-		alignSelf: 'flex-start',
-	},
-	subtitulo: {
-		fontSize: 22,
-		fontFamily: 'Urbanist_500Medium',
-		color: '#1e232c',
-		marginBottom: 20,
-		alignSelf: 'flex-start',
-	},
-	input: {
-		height: 52,
-		width: '100%',
-		borderRadius: 12,
-		marginBottom: 14,
-		paddingHorizontal: 15,
-		backgroundColor: '#ffffff',
-		borderColor: '#d1d1d1',
-		borderWidth: 1,
-		fontFamily: 'Urbanist_500Medium',
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 1 },
-		shadowOpacity: 0.07,
-		shadowRadius: 3,
-		elevation: 2,
-	},
-	esqueceu: {
-		alignSelf: 'flex-end',
-		marginBottom: 20,
-		color: '#0663EF',
-		fontFamily: 'Urbanist_500Medium',
-	},
-	buttonlogin: {
-		width: '100%',
-		height: 52,
-		borderRadius: 12,
-		justifyContent: 'center',
-		backgroundColor: '#1e232c',
-		marginBottom: 30,
-		shadowColor: '#000',
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-		elevation: 3,
-	},
-	labelLogin: {
-		fontSize: 16,
-		color: 'white',
-		fontFamily: 'Urbanist_600SemiBold',
-	},
-	divisor: {
-		flexDirection: 'row',
-		alignItems: 'center',
-		marginBottom: 20,
-		width: '100%',
-	},
-	linha: {
-		flex: 1,
-		height: 1,
-		backgroundColor: '#ccc',
-	},
-	ou: {
-		marginHorizontal: 10,
-		color: '#555',
-		fontFamily: 'Urbanist_500Medium',
-	},
-	botoes: {
-		flexDirection: 'row',
-		justifyContent: 'space-around',
-		width: '100%',
-		marginBottom: 30,
-	},
-	botoesapps: {
-		backgroundColor: '#ffffff',
-		borderRadius: 10,
-		height: 60,
-		width: 60,
-		justifyContent: 'center',
-		alignItems: 'center',
-		elevation: 2,
-	},
-	rodape: {
-		flexDirection: 'row',
-		justifyContent: 'center',
-	},
-	rodapeTexto1: {
-		fontSize: 15,
-		fontFamily: 'Urbanist_500Medium',
-		color: '#1E232C',
-	},
-	rodapeTexto2: {
-		fontSize: 15,
-		fontFamily: 'Urbanist_700Bold',
-		color: '#0663EF',
-	},
+const styleslogin = StyleSheet.create({
+    container: {
+        backgroundColor: "#4FC3F7",
+        flex: 1,
+        flexDirection: "column",
+        justifyContent: "space-around",
+        alignItems: "center",
+        height: "100%",
+        paddingLeft: '5%',
+    },
+    buttonlogin: {
+        margin: 4,
+        width: '90%',
+        height: '7%',
+        borderRadius: 10,
+        backgroundColor: '#1e232c',
+        borderColor: '#000000',
+        borderWidth: 1,
+        color: '#ffffff',
+        textAlign: "center",
+        fontFamily: 'Urbanist_600SemiBold',
+        fontSize: 18,
+        justifyContent: "center",
+    },
+    input: {
+        height: '7%',
+        width: '90%',
+        borderRadius: 30,
+        margin: 12,
+        borderWidth: 1,
+        padding: 10,
+        backgroundColor: '#ffffff',
+        fontFamily: 'Urbanist_500Medium',
+    },
+    voltar: {
+        color: '#1e232c',
+        backgroundColor: "darkblue",
+        alignSelf: "flex-start",
+    },
+    botoes: {
+        flex: 1,
+        alignItems: "center",
+        padding: "10%",
+        justifyContent: "space-around",
+        flexDirection: "row",
+        gap: 30,
+        position: "sticky",
+        height: '10%',
+    },
+    texto: {
+        fontSize: 30,
+        fontFamily: 'Poppins_700Bold',
+        alignSelf: "flex-start",
+    },
+    botoesapps: {
+        backgroundColor: 'white',
+        borderRadius: 10,
+        height: '20%',
+        width: '20%',
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    textoRodape1: {
+        fontSize: 15,
+        fontFamily: 'Urbanist_500Medium',
+        color: '#1E232C',
+    },
+    textoRodape2: {
+        fontSize: 15,
+        fontFamily: 'Urbanist_700Bold',
+        color: '#0663EF',
+    },
+    textoRodapeContainer: {
+        paddingBottom: 20,
+        flexDirection: "row",
+    },
 });
