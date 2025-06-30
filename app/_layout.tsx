@@ -4,57 +4,58 @@ import React from "react";
 export default function RootLayout() {
   return (
     <Stack>
+      {/* Tela principal inicial */}
       <Stack.Screen
-      name="index"
-      options={{
-        headerShown: false
-      }}
+        name="index"
+        options={{
+          headerShown: false,
+        }}
       />
       <Stack.Screen
-      name="splash"
-      options={{
-        headerShown: false
-      }}
+        name="splash"
+        options={{
+          headerShown: false,
+        }}
       />
       <Stack.Screen
-      name="welcome"
-      options={{
-        headerShown: false
-      }}
+        name="welcome"
+        options={{
+          headerShown: false,
+        }}
       />
       <Stack.Screen
-      name="login"
-      options={{
-        headerShown: false
-      }}
+        name="login"
+        options={{
+          headerShown: false,
+        }}
       />
       <Stack.Screen
-      name="cadastro"
-      options={{
-        headerShown: false
-      }}
+        name="cadastro"
+        options={{
+          headerShown: false,
+        }}
+      />
+
+      <Stack.Screen
+        name="mapa"
+        options={{
+          title: 'Queue&Go',
+          headerStyle: {
+            backgroundColor: "#4FC3F7",
+          },
+          headerTintColor: "black",
+          headerTitleAlign: "center",
+        }}
       />
       <Stack.Screen
-      name="mapa"
-      options={{
-        title: 'Queu&Go',
-        headerStyle: {
-          backgroundColor: "#4FC3F7",
-        },
-        headerTintColor: "black",
-        headerTitleAlign: "center",
-      }}
-      />
-      <Stack.Screen
-      name="madalosso"
-      options={{
-        title: 'Restaurante Madalosso',
-        headerStyle: {
-          backgroundColor: "#4FC3F7",
-        },
-        headerTintColor: "black",
-        headerTitleAlign: "center",
-      }}
+        name="restaurante"
+        options={{
+          headerStyle: {
+            backgroundColor: "#4FC3F7",
+          },
+          headerTintColor: "black",
+          headerTitleAlign: "center",
+        }}
       />
     </Stack>
   );

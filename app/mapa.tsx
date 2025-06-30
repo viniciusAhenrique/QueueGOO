@@ -1,142 +1,309 @@
-import React, { useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
-import { Link, useRouter } from 'expo-router';
-import ModalRestaurante from './components/modalRestaurante';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  Dimensions,
+  TouchableOpacity,
+  Image,
+  Text,
+  Animated,
+  TouchableWithoutFeedback
+} from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import * as Location from 'expo-location';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { signOut } from 'firebase/auth';
+import { auth } from '@/firebaseconfig';
+import BalaoRestaurante from './components/modalRestaurante';
 
-export default function Mapa() {
-  const [modalVisible, setModalVisible] = useState(false);
+const { width } = Dimensions.get('window');
+const menuWidth = width * 0.7;
+const GOOGLE_API_KEY = 'AIzaSyDr1HnkERYXONsiFrX0dTEa_cHcaWS3AQc';
+
+const mapStyleSemHoteis = [
+  { featureType: 'poi.hotel', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.place_of_worship', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
+];
+
+export default function MapaComTudo() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
+  const [lugares, setLugares] = useState([]);
+  const [lugarSelecionado, setLugarSelecionado] = useState(null);
+  const slideAnim = useState(new Animated.Value(-menuWidth))[0];
+  const mapRef = useRef(null);
   const router = useRouter();
+  const locationSubscription = useRef(null);
+  const user = auth.currentUser;
+  const nomeUsuario = user?.displayName || user?.email || 'Usuário';
 
-  const restaurante = () => {
-      router.push('./madalosso');
+  const toggleMenu = () => {
+    Animated.timing(slideAnim, {
+      toValue: menuOpen ? -menuWidth : 0,
+      duration: 250,
+      useNativeDriver: false,
+    }).start(() => setMenuOpen(!menuOpen));
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.replace('/login');
+    } catch (error) {
+      console.error('Erro ao sair:', error);
+    }
+  };
+
+  const centralizarLocal = () => {
+    if (userLocation && mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    }
+  };
+
+  const irParaBuscar = () => router.push('/BuscarLayer');
+  const irParaFavoritos = () => router.push('/favoritos');
+
+  const getPinColor = (lot) => {
+    if (lot > 80) return 'red';
+    if (lot >= 40) return 'gold';
+    return 'green';
+  };
+
+  const handleMapDrag = () => {
+    setLugarSelecionado(null);
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLugares(prev => prev.map(l => ({
+        ...l,
+        lotacao: Math.floor(Math.random() * 100) + 1,
+      })));
+    }, 120000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+
+      const location = await Location.getCurrentPositionAsync({});
+      setUserLocation(location.coords);
+      buscarGooglePlaces(location.coords.latitude, location.coords.longitude);
+
+      locationSubscription.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 10,
+          timeInterval: 1000,
+        },
+        (newLocation) => {
+          setUserLocation(newLocation.coords);
+        }
+      );
+    })();
+
+    return () => locationSubscription.current?.remove();
+  }, []);
+
+  const buscarGooglePlaces = async (latitude, longitude) => {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${latitude},${longitude}&radius=3000&type=restaurant&key=${GOOGLE_API_KEY}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.status !== 'OK') return;
+
+      setLugares(data.results.map(item => ({
+        id: item.place_id,
+        nome: item.name,
+        tipo: item.types?.[0] || 'Restaurante',
+        latitude: item.geometry.location.lat,
+        longitude: item.geometry.location.lng,
+        foto: item.photos?.[0]?.photo_reference || null,
+        lotacao: Math.floor(Math.random() * 100) + 1,
+      })));
+    } catch (e) {
+      console.error('Erro ao buscar lugares:', e);
+    }
   };
 
   return (
     <View style={styles.container}>
-      <MapView 
-      style={styles.map}
-      initialRegion={{
-        latitude: -25.42,
-        longitude: -49.26,
-        latitudeDelta: 100,
-        longitudeDelta: 100
-      }}
-      showsUserLocation
-    >
-        <Marker
-        pinColor='blue'
-          coordinate={{
-            latitude: -25.441954450902056,
-            longitude: -49.16176739594576
-          }}
-          title={'Pizzaria das Familias'}
-          description={'Buffet de pizzas e sushis'}
-          onPress={() => setModalVisible(true)}
-        />
-        <Marker
-          coordinate={{
-            latitude: -25.435092308750086,
-            longitude: -49.165174646543065
-          }}
-          title={'Restaurante Sabor Mineiro'}
-          description={'Restaurante de comidas diversas localizado no interior do Carrefour'}
-          onPress={() => setModalVisible(true)}
-        />
-        <Marker
-          coordinate={{
-            latitude: -25.43171984788169,
-            longitude: -49.19352643194929
-          }}
-          title={'Churrascão Gaúcho'}
-          description={'Rodízio com 20 tipos de carne, além de buffet com saladas e pratos quentes, em casa com amplo salão e varanda.'}
-          onPress={() => setModalVisible(true)}
-        />
-        <Marker
-          coordinate={{
-            latitude: -25.432737101491274,
-            longitude: -49.193889537986685
-          }}
-          title={'Pizza Americana'}
-          description={'Buffet de pizzas e outras comidas'}
-          onPress={() => setModalVisible(true)}
-        />
-        <Marker
-          coordinate={{
-            latitude: -25.405365215362806,
-            longitude: -49.32834824053337
-          }}
-          title={'Restaurante Madalosso'}
-          description={'Restaurante tradicional que serve pratos da cozinha italiana em vários ambientes e salões de festa.'}
-          onPress={() => setModalVisible(true)}
-        />
-        <Marker
-          coordinate={{
-            latitude: -25.432277547507812,
-            longitude: -49.27507684761119
-          }}
-          title={'San Domingos Restaurante'}
-          description={'Restaurante e café colonial.'}
-          onPress={() => setModalVisible(true)}
-        />
-        <Marker
-          coordinate={{
-            latitude: -25.44053701514395,
-            longitude: -49.29497405881046
-          }}
-          title={'Tribo das Frutas'}
-          description={'Restaurante moderno e rústico com saladas, sucos, hambúrgueres, comida grelhada e smoothies.'}
-          onPress={() => setModalVisible(true)}
-        />
+      <MapView
+        ref={mapRef}
+        provider={PROVIDER_GOOGLE}
+        style={styles.map}
+        showsUserLocation
+        showsMyLocationButton={false}
+        initialRegion={{
+          latitude: userLocation?.latitude || -25.42,
+          longitude: userLocation?.longitude || -49.26,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }}
+        onPress={handleMapDrag}
+        onPanDrag={handleMapDrag}
+        customMapStyle={mapStyleSemHoteis}
+      >
+        {lugares.map((lugar) => (
+          <Marker
+            key={lugar.id}
+            coordinate={{ latitude: lugar.latitude, longitude: lugar.longitude }}
+            pinColor={getPinColor(lugar.lotacao)}
+            onPress={() => setLugarSelecionado(lugar)}
+          />
+        ))}
       </MapView>
-      <Modal
-          animationType="slide"
-          transparent={true}
-          visible={modalVisible}
-          onRequestClose={() => {
-            setModalVisible(!modalVisible);
-          }}>
-            <ModalRestaurante
-              fecharModal={ () => setModalVisible(false) }
-              menuRestaurante={restaurante}
-            />
-        </Modal>
+
+      {lugarSelecionado && (
+        <View style={styles.balaoFixo}>
+          <BalaoRestaurante
+            nome={lugarSelecionado.nome}
+            tipo={lugarSelecionado.tipo}
+            lotacao={lugarSelecionado.lotacao}
+            placeId={lugarSelecionado.id}
+            foto={lugarSelecionado.foto ?
+              `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${lugarSelecionado.foto}&key=${GOOGLE_API_KEY}` :
+              null}
+            onClose={() => setLugarSelecionado(null)}
+          />
+        </View>
+      )}
+
+      <TouchableOpacity style={styles.menuButton} onPress={toggleMenu}>
+        <Feather name="menu" size={28} color="#333" />
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.searchButton} onPress={irParaBuscar}>
+        <Feather name="search" size={26} color="#333" />
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.locationButton} onPress={centralizarLocal}>
+        <MaterialIcons name="gps-fixed" size={24} color="#333" />
+      </TouchableOpacity>
+
+      <View style={styles.zoomContainer}>
+        <TouchableOpacity style={styles.zoomButton} onPress={() => {
+          if (mapRef.current && userLocation) mapRef.current.animateToRegion({
+            latitude: userLocation.latitude,
+            longitude: userLocation.longitude,
+            latitudeDelta: 0.005,
+            longitudeDelta: 0.005,
+          });
+        }}>
+          <Text style={styles.zoomText}>＋</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.zoomButton} onPress={() => {
+          if (mapRef.current && userLocation) mapRef.current.animateToRegion({
+            latitude: userLocation.latitude,
+            longitude: userLocation.longitude,
+            latitudeDelta: 0.03,
+            longitudeDelta: 0.03,
+          });
+        }}>
+          <Text style={styles.zoomText}>－</Text>
+        </TouchableOpacity>
+      </View>
+
+      {menuOpen && (
+        <TouchableWithoutFeedback onPress={toggleMenu}>
+          <View style={styles.overlay} />
+        </TouchableWithoutFeedback>
+      )}
+
+      <Animated.View style={[styles.drawer, { left: slideAnim }]}>
+        <View style={styles.profile}>
+          <Image
+            source={{ uri: `https://i.pravatar.cc/100?u=${user?.uid || 'usuario'}` }}
+            style={styles.avatar}
+          />
+          <Text style={styles.welcome}>Olá, {nomeUsuario.split('@')[0]}</Text>
+        </View>
+        <View style={styles.menuItems}>
+          <DrawerItem label="Início" icon="home" onPress={() => { }} />
+          <DrawerItem label="Favoritos" icon="favorite" onPress={irParaFavoritos} />
+          <DrawerItem label="Perfil" icon="person" onPress={() => { }} />
+          <DrawerItem label="Sair" icon="logout" onPress={handleLogout} />
+        </View>
+      </Animated.View>
+
     </View>
   );
 }
 
+function DrawerItem({ label, icon, onPress }) {
+  return (
+    <TouchableOpacity style={styles.menuItem} onPress={onPress}>
+      <MaterialIcons name={icon} size={22} color="#444" />
+      <Text style={styles.menuLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  map: {
-    width: '100%',
-    height: '100%',
-  },
-  modalView: {
+  container: { flex: 1 },
+  map: { width: '100%', height: '100%' },
+  balaoFixo: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 35,
-    alignItems: 'center',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 16,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 20,
+    zIndex: 1000,
   },
-  button: {
-    borderRadius: 20,
-    padding: 10,
-    elevation: 2,
+  menuButton: {
+    position: 'absolute', top: 50, left: 20,
+    backgroundColor: 'white', padding: 8, borderRadius: 8, elevation: 4, zIndex: 10,
   },
-  buttonClose: {
-    backgroundColor: '#2196F3',
+  searchButton: {
+    position: 'absolute', top: 50, right: 20,
+    backgroundColor: 'white', padding: 8, borderRadius: 8, elevation: 4, zIndex: 10,
   },
-  modalText: {
-    marginBottom: 15,
-    textAlign: 'center',
+  locationButton: {
+    position: 'absolute', bottom: 40, right: 20,
+    backgroundColor: 'white', padding: 10, borderRadius: 50, elevation: 5, zIndex: 10,
   },
+  zoomContainer: {
+    position: 'absolute', right: 20, bottom: 150,
+    justifyContent: 'space-between', height: 100, zIndex: 10,
+  },
+  zoomButton: {
+    backgroundColor: 'white', padding: 10, marginVertical: 5,
+    borderRadius: 50, elevation: 5,
+  },
+  zoomText: { fontSize: 20, textAlign: 'center', color: '#333' },
+  drawer: {
+    position: 'absolute', top: 0, bottom: 0, width: menuWidth,
+    backgroundColor: '#fff', paddingTop: 80, paddingHorizontal: 20,
+    elevation: 8, zIndex: 20,
+  },
+  overlay: {
+    position: 'absolute', top: 0, bottom: 0,
+    left: menuWidth, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)', zIndex: 15,
+  },
+  profile: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
+  avatar: { width: 48, height: 48, borderRadius: 24 },
+  welcome: { marginLeft: 12, fontSize: 16, fontWeight: '600', color: '#333' },
+  menuItems: { gap: 18 },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
+  menuLabel: { fontSize: 16, color: '#333' },
 });
