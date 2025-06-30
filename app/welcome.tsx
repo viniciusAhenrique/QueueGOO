@@ -1,6 +1,5 @@
-import { Link, useRouter } from 'expo-router';
-import React, { useCallback } from 'react';
-import { SafeAreaView, View, StyleSheet, Image, Text, ActivityIndicator } from 'react-native';
+import React, { useEffect } from 'react';
+import { SafeAreaView, StyleSheet, Image, Text } from 'react-native';
 import { Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import useAuth from '@/hooks/useAuth';
