@@ -1,8 +1,14 @@
-import { Text, View, Image, ScrollView, Button, Alert, StyleSheet } from "react-native";
-import { Link } from 'expo-router';
-import React from "react";
+import { Text, View, Image, ScrollView, Button, Alert, StyleSheet} from "react-native";
+import { Link,useRouter } from 'expo-router';
+import React = require("react");
+import Favoritos from "./Favoritos";
 
 export default function produto() {
+    const router = useRouter();
+    const favoritos = () => {
+        router.push("./Favoritos");
+    };
+
   return (
     <ScrollView
     style={{
@@ -24,13 +30,17 @@ export default function produto() {
                 title="Cardápio"
                 onPress={() => Alert.alert('Cardápio')}
             />
-            <Button
+                        <Button
                 title="Reservar"
                 onPress={() => Alert.alert('Reserva')}
             />
+            <Button
+                title="Reservar"
+                onPress={favoritos}
+            />
         </View>
     </ScrollView>
-  );
+  )
 }
 
 export const styles = StyleSheet.create({

@@ -1,4 +1,4 @@
-import React from 'react';
+import React = require("react");
 import { TouchableOpacity, StyleSheet, Text, SafeAreaView, View } from 'react-native';
 
 export default function ModalRestaurante({ fecharModal, menuRestaurante } : {fecharModal:any, menuRestaurante:any}) {

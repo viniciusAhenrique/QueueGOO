@@ -1,8 +1,8 @@
 import { Link, useRouter } from 'expo-router';
-import React from 'react';
 import { View, Text, StyleSheet, Image, Alert, TextInput } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from 'react-native-paper';
+import React = require('react');
 
 
 export default function Cadastro() {
