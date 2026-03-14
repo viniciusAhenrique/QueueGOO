@@ -1,50 +1,94 @@
-# Welcome to your Expo app 👋
+# QueueGOO
+Aplicativo mobile para consulta em tempo real do nível de movimentação de restaurantes próximos, com sistema de reservas, avaliações e notificações inteligentes.
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+# QueueGOO
+Plataforma digital colaborativa que integra geolocalização e dados compartilhados pelos próprios usuários para indicar o nível de lotação de restaurantes (verde, amarelo ou vermelho). O sistema permite busca inteligente de estabelecimentos, reservas online, avaliações e notificações automáticas, promovendo conveniência, economia de tempo e melhor experiência na escolha de onde comer.
 
-## Get started
+## Objetivos
+### Objetivo Geral
+Desenvolver um aplicativo mobile que permita visualizar, em tempo real, o nível de movimentação de restaurantes e realizar reservas de forma prática e segura.
 
-1. Install dependencies
+### Objetivos Específicos
+- Permitir cadastro de usuários e restaurantes.
+- Exibir restaurantes próximos via integração com Google Maps.
+- Indicar nível de lotação por ícones coloridos (verde, amarelo, vermelho).
+- Permitir reservas com confirmação, reagendamento e cancelamento.
+- Oferecer sistema de avaliações e feedback pós-reserva.
+- Disponibilizar notificações push sobre mudanças de lotação.
+- Garantir conformidade com LGPD e segurança de dados.
+- Suportar login social (Google, Facebook etc.).
 
-   ```bash
-   npm install
-   ```
+## Tecnologias Utilizadas
 
-2. Start the app
+- Frontend: React Native
+- Backend: Node.js
+- Banco de Dados: Firebase
+- Autenticação: Firebase Authentication
+- Mapas e Geolocalização: Google Maps API
+- Notificações Push: Firebase Cloud Messaging
+- Armazenamento de Imagens: Firebase Storage ou AWS S3
+- Testes: Jest + Cypress
+- Prototipagem: Figma
+- Gestão de Projeto: GitHub Projects (Kanban)
 
-   ```bash
-    npx expo start
-   ```
+## Funcionalidades Principais
 
-In the output, you'll find options to open the app in a
+- Cadastro de usuários e restaurantes
+- Login seguro e recuperação de senha
+- Login social (Google/Facebook)
+- Busca de restaurantes próximos via mapa
+- Aplicação de filtros (distância, tipo de cozinha, avaliação etc.)
+- Visualização do nível de movimentação em tempo real
+- Compartilhamento de localização para alimentar dados de lotação
+- Reserva de mesas
+- Confirmação, reagendamento e cancelamento de reservas
+- Histórico de reservas
+- Lista de restaurantes favoritos
+- Avaliação com nota e comentário
+- Notificações push automáticas
+- Painel administrativo para validação de restaurantes
+- Requisitos Não Funcionais
+- Comunicação segura via HTTPS
+- Senhas criptografadas com bcrypt
+- Conformidade com LGPD
+- Tempo de resposta inferior a 2 segundos
+- Escalabilidade horizontal
+- Uptime mínimo de 99,5%
+- Backups automáticos diários (retenção mínima de 30 dias)
+- Compatibilidade com Android e iOS (duas versões anteriores)
+- Cobertura mínima de 80% em testes automatizados
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Casos de Uso
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Atores Principais:
+- Usuário: busca restaurantes, realiza reservas, avalia e compartilha localização.
+- Restaurante: gerencia cadastro e reservas recebidas.
+- Administrador: valida cadastros e gerencia estabelecimentos.
+- Sistema Externo: Google Maps API e serviço de notificações push.
 
-## Get a fresh project
+## Exemplos de Casos de Uso
 
-When you're ready, run:
+- Cadastrar Usuário
+- Login / Login Social
+- Buscar Restaurantes
+- Aplicar Filtros
+- Visualizar Nível de Movimentação
+- Efetuar Reserva
+- Gerenciar Reserva
+- Avaliar Restaurante
+- Salvar como Favorito
+- Validar Credenciamento
 
-```bash
-npm run reset-project
-```
+## Testes
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Testes de Caixa-Preta
+- Login com senha incorreta → exibir erro.
+- Reserva de horário indisponível → bloquear agendamento.
+- Cadastro com e-mail duplicado → impedir criação.
+- Aplicação de múltiplos filtros → retorno correto.
+- Compartilhamento de localização → atualização da lotação em tempo real.
 
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+### Testes de Aceitação
+- Fluxo completo de busca → reserva → cancelamento.
+- Cadastro e validação de restaurante pelo administrador.
+- Bloqueio de restaurante e tentativa de login
