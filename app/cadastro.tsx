@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, Alert, TextInput, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Button } from 'react-native-paper';
-import { auth, db } from '../firebaseconfig';
+import { auth, db } from '@/firebaseconfig';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 
@@ -72,7 +72,9 @@ export default function Cadastro() {
               icon="arrow-left-circle"
               style={styles.voltar}
               onPress={retornar}
-            />
+            >
+              Voltar
+            </Button>
 
             <Text style={styles.titulo}>Olá! Se inscreva para começar</Text>
 

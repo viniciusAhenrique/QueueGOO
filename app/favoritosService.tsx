@@ -1,6 +1,5 @@
 import { db } from '@/firebaseconfig'; 
 import {
-  collection,
   doc,
   setDoc,
   deleteDoc,
@@ -11,6 +10,7 @@ export const adicionarFavorito = async (
   userId: string,
   restaurante: {
     id: string;
+    placeId: string;
     nome: string;
     tipo: string;
     lotacao: number;

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Animated, StyleSheet, View, Image } from "react-native";
+import { Animated, StyleSheet, View } from "react-native";
 
 const Logo = require("../assets/images/logo-splash.png");
 
@@ -12,7 +12,7 @@ export default function Splashscreen() {
       duration: 1500,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [fadeAnim]);
 
   return (
     <View style={styles.container}>

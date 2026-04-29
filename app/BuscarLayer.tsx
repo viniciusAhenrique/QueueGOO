@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image, TextInput, ActivityIndicator
 } from 'react-native';
@@ -6,8 +6,25 @@ import { Searchbar, Chip, Button } from 'react-native-paper';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import axios from 'axios';
+import { getNearbySearchUrl, getPlacePhotoUrl } from '@/config/googleApi';
 
-const GOOGLE_API_KEY = 'AIzaSyDr1HnkERYXONsiFrX0dTEa_cHcaWS3AQc';
+interface LocalizacaoCoords {
+  latitude: number;
+  longitude: number;
+}
+
+interface ResultadoBusca {
+  place_id: string;
+  name: string;
+  rating?: number;
+  vicinity: string;
+  photos?: { photo_reference: string }[];
+}
+
+interface NearbySearchResponse {
+  results: ResultadoBusca[];
+  next_page_token?: string;
+}
 
 const categorias = [
   { nome: 'Todos', valor: '' },
@@ -19,14 +36,14 @@ const categorias = [
 const raios = [1000, 2000, 4000, 7000];
 
 export default function BuscarLayer() {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoriaSelecionada, setCategoriaSelecionada] = useState('');
-  const [resultados, setResultados] = useState([]);
-  const [localizacao, setLocalizacao] = useState(null);
-  const [raioBusca, setRaioBusca] = useState(2000);
-  const [avaliacaoMinima, setAvaliacaoMinima] = useState('');
-  const [nextPageToken, setNextPageToken] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('');
+  const [resultados, setResultados] = useState<ResultadoBusca[]>([]);
+  const [localizacao, setLocalizacao] = useState<LocalizacaoCoords | null>(null);
+  const [raioBusca, setRaioBusca] = useState<number>(2000);
+  const [avaliacaoMinima, setAvaliacaoMinima] = useState<string>('');
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
 
   const router = useRouter();
 
@@ -35,26 +52,35 @@ export default function BuscarLayer() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
         const loc = await Location.getCurrentPositionAsync({});
-        setLocalizacao(loc.coords);
+        setLocalizacao({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
       }
     })();
   }, []);
 
-  useEffect(() => {
-    buscarRestaurantes();
-  }, [searchQuery, categoriaSelecionada, raioBusca]);
-
-  const buscarRestaurantes = async (mais = false) => {
+  const buscarRestaurantes = useCallback(async (mais = false, pageToken?: string | null) => {
     if (!localizacao) return;
     try {
       setLoading(true);
       const categoria = categoriaSelecionada || 'restaurant';
-      const pagToken = mais && nextPageToken ? `&pagetoken=${nextPageToken}` : '';
+      const pagToken = mais ? pageToken ?? undefined : undefined;
+      const keyword = `${categoria} ${searchQuery}`.trim();
 
-      const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${localizacao.latitude},${localizacao.longitude}&radius=${raioBusca}&type=restaurant&keyword=${categoria}+${searchQuery}&key=${GOOGLE_API_KEY}${pagToken}`;
+      let url = getNearbySearchUrl(
+        localizacao.latitude,
+        localizacao.longitude,
+        raioBusca,
+        'restaurant',
+        keyword,
+      );
+      if (pagToken) {
+        url += `&pagetoken=${pagToken}`;
+      }
 
-      const res = await axios.get(url);
-      const filtrado = res.data.results.filter(r =>
+      const res = await axios.get<NearbySearchResponse>(url);
+      const filtrado = res.data.results.filter((r) =>
         !avaliacaoMinima || (r.rating && r.rating >= parseFloat(avaliacaoMinima))
       );
 
@@ -70,11 +96,21 @@ export default function BuscarLayer() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    avaliacaoMinima,
+    categoriaSelecionada,
+    localizacao,
+    raioBusca,
+    searchQuery,
+  ]);
 
-  const renderItem = ({ item }) => {
+  useEffect(() => {
+    buscarRestaurantes();
+  }, [buscarRestaurantes]);
+
+  const renderItem = ({ item }: { item: ResultadoBusca }) => {
     const imagem = item.photos?.[0]?.photo_reference
-      ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${item.photos[0].photo_reference}&key=${GOOGLE_API_KEY}`
+      ? getPlacePhotoUrl(item.photos[0].photo_reference)
       : 'https://via.placeholder.com/400x200.png?text=Sem+Imagem';
 
     return (
@@ -145,16 +181,14 @@ export default function BuscarLayer() {
         renderItem={renderItem}
         contentContainerStyle={styles.lista}
         ListEmptyComponent={
-          !loading && (
-            <Text style={styles.empty}>Nenhum restaurante encontrado.</Text>
-          )
+          !loading ? <Text style={styles.empty}>Nenhum restaurante encontrado.</Text> : null
         }
         ListFooterComponent={
-          nextPageToken && (
-            <Button mode="contained" onPress={() => buscarRestaurantes(true)} style={styles.botao}>
+          nextPageToken ? (
+            <Button mode="contained" onPress={() => buscarRestaurantes(true, nextPageToken)} style={styles.botao}>
               Carregar mais
             </Button>
-          )
+          ) : null
         }
       />
     </View>

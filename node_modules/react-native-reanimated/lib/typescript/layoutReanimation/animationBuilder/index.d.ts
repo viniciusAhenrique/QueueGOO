@@ -1,4 +1,4 @@
 export { BaseAnimationBuilder } from './BaseAnimationBuilder';
 export { ComplexAnimationBuilder } from './ComplexAnimationBuilder';
-export { Keyframe } from './Keyframe';
+export { Keyframe, type ReanimatedKeyframe } from './Keyframe';
 //# sourceMappingURL=index.d.ts.map

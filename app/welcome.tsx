@@ -12,7 +12,7 @@ export default function Welcome() {
     if (user) {
       router.replace('/mapa');
     }
-  }, [user]);
+  }, [router, user]);
 
   const acessarLogin = () => {
     router.push('/login');

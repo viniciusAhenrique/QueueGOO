@@ -9,8 +9,6 @@
  * @oncall react_native
  */
 
-'use strict';
-
 import type {Scope} from '@babel/traverse';
 import type {CallExpression, MemberExpression} from '@babel/types';
 // Type only import. No runtime dependency
@@ -32,7 +30,7 @@ type PlatformChecks = {
   ) => boolean,
 };
 
-function createInlinePlatformChecks(
+export default function createInlinePlatformChecks(
   t: Types,
   requireName: string = 'require',
 ): PlatformChecks {
@@ -76,7 +74,7 @@ function createInlinePlatformChecks(
     isMemberExpression(node.object) &&
     isIdentifier(node.object.property, {name: 'Platform'}) &&
     isImportOrGlobal(
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       node.object.object,
       scope,
       [{name: 'React'}, {name: 'ReactNative'}],
@@ -91,7 +89,7 @@ function createInlinePlatformChecks(
     isMemberExpression(node.callee) &&
     isIdentifier(node.callee.property, {name: 'select'}) &&
     isImportOrGlobal(
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       node.callee.object,
       scope,
       [{name: 'Platform'}],
@@ -108,7 +106,7 @@ function createInlinePlatformChecks(
     isMemberExpression(node.callee.object) &&
     isIdentifier(node.callee.object.property, {name: 'Platform'}) &&
     isImportOrGlobal(
-      // $FlowFixMe[incompatible-call]
+      // $FlowFixMe[incompatible-type]
       // $FlowFixMe[incompatible-use]
       node.callee.object.object,
       scope,
@@ -144,14 +142,30 @@ function createInlinePlatformChecks(
     const identifier = patterns.find((pattern: {name: string}) =>
       isIdentifier(node, pattern),
     );
-    return (
-      (!!identifier &&
-        isToplevelBinding(
-          scope.getBinding(identifier.name),
-          isWrappedModule,
-        )) ||
-      isImport(node, scope, patterns)
-    );
+    if (
+      !!identifier &&
+      isToplevelBinding(scope.getBinding(identifier.name), isWrappedModule)
+    ) {
+      return true;
+    }
+    if (isImport(node, scope, patterns)) {
+      return true;
+    }
+    if (isIdentifier(node)) {
+      const binding = scope.getBinding(node.name);
+      if (
+        binding != null &&
+        isToplevelBinding(binding, isWrappedModule) &&
+        binding.path.isVariableDeclarator()
+      ) {
+        const init = binding.path.node.init;
+        // $FlowFixMe[incompatible-type] Flow doesn't narrow binding.path.node through isVariableDeclarator()
+        if (init != null && isImport(init, scope, patterns)) {
+          return true;
+        }
+      }
+    }
+    return false;
   };
 
   const checkRequireArgs = (
@@ -184,5 +198,3 @@ function createInlinePlatformChecks(
     isPlatformSelectNode,
   };
 }
-
-module.exports = createInlinePlatformChecks;

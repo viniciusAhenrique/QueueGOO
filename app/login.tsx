@@ -51,7 +51,9 @@ export default function Login() {
 					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
 				>
 					<ScrollView contentContainerStyle={styles.scroll}>
-						<Button icon="arrow-left-circle" style={styles.voltar} onPress={retornar} />
+						<Button icon="arrow-left-circle" style={styles.voltar} onPress={retornar}>
+							Voltar
+						</Button>
 
 						<Text style={styles.titulo}>Seja bem-vindo!</Text>
 						<Text style={styles.subtitulo}>Para onde vamos?</Text>
@@ -91,9 +93,15 @@ export default function Login() {
 						</View>
 
 						<View style={styles.botoes}>
-							<Button icon="facebook" style={styles.botoesapps} />
-							<Button icon="google" style={styles.botoesapps} />
-							<Button icon="apple" style={styles.botoesapps} />
+							<Button icon="facebook" style={styles.botoesapps}>
+								{''}
+							</Button>
+							<Button icon="google" style={styles.botoesapps}>
+								{''}
+							</Button>
+							<Button icon="apple" style={styles.botoesapps}>
+								{''}
+							</Button>
 						</View>
 
 						<View style={styles.rodape}>

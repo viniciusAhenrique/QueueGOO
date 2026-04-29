@@ -28,9 +28,26 @@ export type ExpoRouterServerManifestV1Route<TRegex = string> = {
     /** If a redirect, which methods are allowed. Undefined represents all methods */
     methods?: string[];
 };
+export type ExpoRouterServerManifestV1Middleware = {
+    /**
+     * Path to the module that contains the middleware function as a default export.
+     *
+     * @example _expo/functions/+middleware.js
+     */
+    file: string;
+};
 export type ExpoRouterServerManifestV1<TRegex = string> = {
     /**
-     * Rewrites. These occur first
+     * Middleware function that runs before any route matching.
+     * Only allowed at the root level and requires web.output: "server".
+     */
+    middleware?: ExpoRouterServerManifestV1Middleware;
+    /**
+     * Headers to be applied to all responses from the server.
+     */
+    headers?: Record<string, string | string[]>;
+    /**
+     * Rewrites. After middleware has processed and regular routing resumes, these occur first.
      */
     rewrites: ExpoRouterServerManifestV1Route<TRegex>[];
     /**
@@ -58,10 +75,14 @@ export interface RouteRegex {
     groups: Record<string, Group>;
     re: RegExp;
 }
-export declare function getServerManifest(route: RouteNode): ExpoRouterServerManifestV1;
+type GetServerManifestOptions = {
+    headers?: Record<string, string | string[]>;
+};
+export declare function getServerManifest(route: RouteNode, options: GetServerManifestOptions | undefined): ExpoRouterServerManifestV1;
 export declare function parseParameter(param: string): {
     name: string;
     repeat: boolean;
     optional: boolean;
 };
+export {};
 //# sourceMappingURL=getServerManifest.d.ts.map

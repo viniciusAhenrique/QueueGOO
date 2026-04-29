@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ const db = getFirestore(app);
 
 interface Restaurante {
   id: string;
+  placeId: string;
   nome: string;
   tipo: string;
   lotacao: number;
@@ -30,26 +31,38 @@ export default function Favoritos() {
   const router = useRouter();
   const user = getAuth().currentUser;
 
-  useEffect(() => {
-    if (user) buscarFavoritos();
-  }, []);
-
-  const buscarFavoritos = async () => {
+  const buscarFavoritos = useCallback(async () => {
+    if (!user) return;
     try {
-      const snap = await getDocs(collection(db, 'usuarios', user!.uid, 'favoritos'));
-      const lista: Restaurante[] = snap.docs.map((doc) => ({
-        id: doc.id,
-        ...(doc.data() as Restaurante),
-      }));
+      const snap = await getDocs(collection(db, 'usuarios', user.uid, 'favoritos'));
+      const lista: Restaurante[] = snap.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          placeId: data.placeId || doc.id,
+          nome: data.nome,
+          tipo: data.tipo,
+          lotacao: data.lotacao,
+          foto: data.foto,
+        };
+      });
       setFavoritos(lista);
     } catch (error) {
       console.error('Erro ao buscar favoritos:', error);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    buscarFavoritos();
+  }, [buscarFavoritos]);
 
   const removerFavorito = async (id: string) => {
+    if (!user) {
+      Alert.alert('Erro', 'Usuário não autenticado.');
+      return;
+    }
     try {
-      await deleteDoc(doc(db, 'usuarios', user!.uid, 'favoritos', id));
+      await deleteDoc(doc(db, 'usuarios', user.uid, 'favoritos', id));
       setFavoritos((prev) => prev.filter((r) => r.id !== id));
     } catch (error) {
       console.error('Erro ao remover favorito:', error);
@@ -71,10 +84,13 @@ export default function Favoritos() {
   };
 
   const renderDireita = (id: string) => (
-    <View style={styles.swipeRemover}>
+    <TouchableOpacity
+      style={styles.swipeRemover}
+      onPress={() => removerFavorito(id)}
+    >
       <MaterialIcons name="delete" size={24} color="#fff" />
       <Text style={{ color: '#fff' }}>Remover</Text>
-    </View>
+    </TouchableOpacity>
   );
 
   return (
@@ -88,9 +104,8 @@ export default function Favoritos() {
           renderItem={({ item }) => (
             <Swipeable
               renderRightActions={() => renderDireita(item.id)}
-              onSwipeableOpen={() => removerFavorito(item.id)}
             >
-              <TouchableOpacity onPress={() => irParaRestaurante(item.id)} style={styles.card}>
+              <TouchableOpacity onPress={() => irParaRestaurante(item.placeId)} style={styles.card}>
                 <Image
                   source={{ uri: item.foto ?? 'https://via.placeholder.com/150' }}
                   style={styles.image}

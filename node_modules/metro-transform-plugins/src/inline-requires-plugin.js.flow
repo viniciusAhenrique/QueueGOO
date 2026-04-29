@@ -4,22 +4,21 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @format
  * @flow strict
+ * @format
  */
-
-'use strict';
 
 import type {PluginObj} from '@babel/core';
 import typeof * as Babel from '@babel/core';
 import type {NodePath, Scope} from '@babel/traverse';
 import type {Program} from '@babel/types';
+
 type Types = Babel['types'];
 
-export type PluginOptions = $ReadOnly<{
-  ignoredRequires?: $ReadOnlyArray<string>,
-  inlineableCalls?: $ReadOnlyArray<string>,
-  nonMemoizedModules?: $ReadOnlyArray<string>,
+export type PluginOptions = Readonly<{
+  ignoredRequires?: ReadonlyArray<string>,
+  inlineableCalls?: ReadonlyArray<string>,
+  nonMemoizedModules?: ReadonlyArray<string>,
   memoizeCalls?: boolean,
 }>;
 
@@ -58,7 +57,7 @@ export type State = {
  * Is also successfully inlined into:
  *     g(require('foo').Baz);
  */
-module.exports = ({types: t, traverse}: Babel): PluginObj<State> => ({
+export default ({types: t, traverse}: Babel): PluginObj<State> => ({
   name: 'inline-requires',
   visitor: {
     Program: {
