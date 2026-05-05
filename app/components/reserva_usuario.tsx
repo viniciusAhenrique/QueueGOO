@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { getAuth } from 'firebase/auth';
 import {
@@ -147,6 +148,11 @@ const ModalReserva: React.FC<ModalReservaProps> = ({
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.overlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+          style={styles.keyboard}
+        >
         <View style={styles.container}>
           <View style={styles.header}>
             <View style={styles.headerIcon}>
@@ -258,6 +264,7 @@ const ModalReserva: React.FC<ModalReservaProps> = ({
             <Text style={styles.cancelText}>Cancelar</Text>
           </TouchableOpacity>
         </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -269,6 +276,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  keyboard: {
+    width: '100%',
+    alignItems: 'center',
   },
   container: {
     backgroundColor: 'white',

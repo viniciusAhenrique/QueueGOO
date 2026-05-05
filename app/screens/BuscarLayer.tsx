@@ -139,6 +139,24 @@ export default function BuscarLayer() {
     );
   };
 
+  const verNoMapa = () => {
+    const termoCategoria =
+      categoriaSelecionada === 'restaurant'
+        ? ''
+        : categoriaSelecionada === 'supermarket'
+          ? 'mercado'
+          : categoriaSelecionada;
+    const termoBusca = [termoCategoria, searchQuery].filter(Boolean).join(' ').trim();
+
+    router.push({
+      pathname: '/screens/mapa',
+      params: {
+        tipoCulinaria: termoBusca || categoriaSelecionada || undefined,
+        termoBusca: termoBusca || 'Filtro',
+      },
+    });
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.topBar}>
@@ -192,6 +210,13 @@ export default function BuscarLayer() {
         style={styles.input}
         placeholderTextColor="#444"
       />
+
+      {(categoriaSelecionada || searchQuery.trim()) && (
+        <TouchableOpacity style={styles.mapFilterButton} onPress={verNoMapa}>
+          <MaterialIcons name="map" size={18} color="#FFFFFF" />
+          <Text style={styles.mapFilterButtonText}>Ver filtro no mapa</Text>
+        </TouchableOpacity>
+      )}
 
       {loading && (
         <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 10 }} />
@@ -267,6 +292,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     borderWidth: 1,
     borderColor: '#ccc',
+  },
+  mapFilterButton: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 10,
+    minHeight: 46,
+    borderRadius: 8,
+    backgroundColor: '#0D47A1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  mapFilterButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   card: {
     marginHorizontal: 12,

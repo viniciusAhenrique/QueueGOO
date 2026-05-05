@@ -18,7 +18,7 @@ import {
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/firebaseconfig';
@@ -81,6 +81,7 @@ export default function MapaComTudo() {
   // Ref tipada para liberar `animateToRegion` com segurança.
   const mapRef = useRef<MapView | null>(null);
   const router = useRouter();
+  const params = useLocalSearchParams<{ tipoCulinaria?: string; termoBusca?: string }>();
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const nomeUsuario = authUser?.displayName || authUser?.email || 'Usuário';
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -130,6 +131,10 @@ export default function MapaComTudo() {
   const irParaFeed = () => {
     setMenuOpen(false);
     router.push('/screens/feed' as never);
+  };
+  const irParaNotificacoes = () => {
+    setMenuOpen(false);
+    router.push('/screens/notificacoes' as never);
   };
   const irParaPerfil = () => {
     setMenuOpen(false);
@@ -237,7 +242,8 @@ export default function MapaComTudo() {
   const buscarGooglePlaces = async (latitude: number, longitude: number) => {
     setLoading(true);
     try {
-      const data = await buscarRestaurantesProximos(latitude, longitude);
+      const filtro = typeof params.tipoCulinaria === 'string' ? params.tipoCulinaria : undefined;
+      const data = await buscarRestaurantesProximos(latitude, longitude, 1500, filtro);
 
       const restaurantesFiltradosBase: Restaurante[] = data
         .filter((item) => item.google_place_id && item.latitude && item.longitude)
@@ -359,12 +365,15 @@ export default function MapaComTudo() {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>QueueGOO</Text>
-          <Text style={styles.headerSubtitle}>{lugares.length} restaurantes proximos</Text>
+          <Text style={styles.headerSubtitle}>
+            {params.termoBusca ? `${params.termoBusca}: ` : ''}
+            {lugares.length} restaurantes proximos
+          </Text>
         </View>
         <TouchableOpacity style={styles.headerIconButton} onPress={irParaBuscar}>
           <Feather name="search" size={23} color="#0D47A1" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.notificationButton} onPress={irParaFeed}>
+        <TouchableOpacity style={styles.notificationButton} onPress={irParaNotificacoes}>
           <MaterialIcons name="notifications" size={22} color="#0D47A1" />
           {notificacoesPendentes > 0 && (
             <View style={styles.notificationBadge}>
@@ -447,6 +456,7 @@ export default function MapaComTudo() {
         </TouchableOpacity>
         <View style={styles.menuItems}>
           <DrawerItem label="Feed" icon="dynamic-feed" onPress={irParaFeed} />
+          <DrawerItem label="Notificacoes" icon="notifications" onPress={irParaNotificacoes} />
           <DrawerItem label="Favoritos" icon="favorite" onPress={irParaFavoritos} />
           <DrawerItem label="Reservas" icon="event-seat" onPress={irParaReservas} />
           <DrawerItem label="Eventos" icon="event" onPress={irParaSocial} />

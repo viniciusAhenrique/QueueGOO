@@ -33,6 +33,7 @@ import PostComposerModal from '@/app/components/PostComposerModal';
 import { auth, db } from '@/firebaseconfig';
 import { avatarFallback, formatarDataCurta } from '@/src/services/socialServices';
 import { extensaoDaImagem, uploadImagemLocal } from '@/src/services/uploadServices';
+import { formatBrazilianPhone, isValidPhone } from '@/src/utils/validation';
 
 type UserProfile = {
   nome: string;
@@ -71,6 +72,8 @@ export default function Perfil() {
     novaSenha: '',
     confirmarSenha: '',
   });
+  const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
+  const [mostrarConfirmarSenha, setMostrarConfirmarSenha] = useState(false);
 
   const avatarUrl = useMemo(
     () => perfil.fotoUrl || usuario?.photoURL || avatarFallback(usuario?.uid),
@@ -172,6 +175,10 @@ export default function Perfil() {
     if (!usuario) return;
     if (!perfil.nome.trim()) {
       Alert.alert('Erro', 'Nome nao pode estar vazio.');
+      return;
+    }
+    if (perfil.telefone.trim() && !isValidPhone(perfil.telefone)) {
+      Alert.alert('Telefone invalido', 'Digite um telefone com DDD, usando 10 ou 11 numeros.');
       return;
     }
 
@@ -312,7 +319,8 @@ export default function Perfil() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           <View style={styles.topBar}>
@@ -387,7 +395,8 @@ export default function Perfil() {
         <SafeAreaView style={styles.settingsSafeArea}>
           <KeyboardAvoidingView
             style={styles.keyboard}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
           >
             <View style={styles.settingsHeader}>
               <TouchableOpacity style={styles.iconButton} onPress={() => setConfigAberta(false)}>
@@ -410,7 +419,9 @@ export default function Perfil() {
                 <ProfileInput
                   label="Telefone"
                   value={perfil.telefone}
-                  onChangeText={(telefone) => setPerfil((current) => ({ ...current, telefone }))}
+                  onChangeText={(telefone) =>
+                    setPerfil((current) => ({ ...current, telefone: formatBrazilianPhone(telefone) }))
+                  }
                   placeholder="(11) 99999-9999"
                   keyboardType="phone-pad"
                   editable={!loading}
@@ -442,7 +453,9 @@ export default function Perfil() {
                   value={senhaForm.novaSenha}
                   onChangeText={(novaSenha) => setSenhaForm((current) => ({ ...current, novaSenha }))}
                   placeholder="Digite uma nova senha"
-                  secureTextEntry
+                  secureTextEntry={!mostrarNovaSenha}
+                  rightIcon={mostrarNovaSenha ? 'visibility-off' : 'visibility'}
+                  onRightIconPress={() => setMostrarNovaSenha((value) => !value)}
                   editable={!loading}
                 />
                 <ProfileInput
@@ -452,7 +465,9 @@ export default function Perfil() {
                     setSenhaForm((current) => ({ ...current, confirmarSenha }))
                   }
                   placeholder="Confirme a nova senha"
-                  secureTextEntry
+                  secureTextEntry={!mostrarConfirmarSenha}
+                  rightIcon={mostrarConfirmarSenha ? 'visibility-off' : 'visibility'}
+                  onRightIconPress={() => setMostrarConfirmarSenha((value) => !value)}
                   editable={!loading}
                 />
                 <TouchableOpacity
@@ -477,13 +492,22 @@ export default function Perfil() {
 
 type ProfileInputProps = React.ComponentProps<typeof TextInput> & {
   label: string;
+  rightIcon?: React.ComponentProps<typeof MaterialIcons>['name'];
+  onRightIconPress?: () => void;
 };
 
-function ProfileInput({ label, style, ...props }: ProfileInputProps) {
+function ProfileInput({ label, style, rightIcon, onRightIconPress, ...props }: ProfileInputProps) {
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput {...props} style={[styles.input, style]} placeholderTextColor="#7C8794" />
+      <View style={styles.inputShell}>
+        <TextInput {...props} style={[styles.input, style]} placeholderTextColor="#7C8794" />
+        {rightIcon && (
+          <TouchableOpacity style={styles.inputIconButton} onPress={onRightIconPress}>
+            <MaterialIcons name={rightIcon} size={20} color="#64748B" />
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -605,14 +629,26 @@ const styles = StyleSheet.create({
   sectionTitle: { color: INK, fontSize: 17, fontFamily: 'Poppins_700Bold', marginBottom: 12 },
   inputGroup: { marginBottom: 12 },
   label: { color: '#344054', fontSize: 13, marginBottom: 6, fontFamily: 'Urbanist_700Bold' },
-  input: {
+  inputShell: {
     minHeight: 48,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#B3E5FC',
     backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  input: {
+    flex: 1,
+    minHeight: 46,
     paddingHorizontal: 12,
     color: INK,
+  },
+  inputIconButton: {
+    width: 44,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   settingsContent: { paddingBottom: 34 },
   primaryButton: {

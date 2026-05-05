@@ -8,6 +8,8 @@ import {
   Alert,
   Image,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -139,6 +141,11 @@ export default function PostComposerModal({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={fechar}>
       <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          style={styles.keyboard}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+        >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <TouchableOpacity style={styles.closeButton} onPress={fechar}>
             <MaterialIcons name="close" size={22} color={INK} />
@@ -193,6 +200,7 @@ export default function PostComposerModal({
             )}
           </TouchableOpacity>
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );
@@ -200,6 +208,7 @@ export default function PostComposerModal({
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#E3F2FD' },
+  keyboard: { flex: 1 },
   content: { padding: 18, paddingBottom: 34 },
   closeButton: {
     width: 42,

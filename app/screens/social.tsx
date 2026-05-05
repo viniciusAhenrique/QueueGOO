@@ -44,6 +44,7 @@ import {
   buscarRestaurantesPorTexto,
   RestauranteResumo,
 } from '@/src/services/restauranteServices';
+import { isValidEmail, normalizeEmail, splitValidEmails } from '@/src/utils/validation';
 
 type Comentario = {
   id: string;
@@ -101,10 +102,7 @@ const BLUE_DARK = '#0D47A1';
 const INK = '#1e232c';
 
 function normalizarEmails(valor: string) {
-  return valor
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean);
+  return splitValidEmails(valor);
 }
 
 function ordenarEvento(a: Evento, b: Evento) {
@@ -362,9 +360,13 @@ export default function Social() {
   const adicionarAmigo = async () => {
     if (!user) return;
 
-    const email = novoAmigoEmail.trim().toLowerCase();
+    const email = normalizeEmail(novoAmigoEmail);
     if (!email) {
       Alert.alert('Informe um email', 'Digite o email de alguem cadastrado no app.');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      Alert.alert('Email invalido', 'Digite um email valido para adicionar um amigo.');
       return;
     }
 
@@ -486,10 +488,22 @@ export default function Social() {
       return;
     }
 
+    if (!form.placeId) {
+      Alert.alert('Selecione o restaurante', 'Use a busca e toque em um restaurante da lista.');
+      return;
+    }
+
+    const emailsDigitados = normalizarEmails(form.convidados);
+    const emailInvalido = emailsDigitados.find((email) => !isValidEmail(email));
+    if (emailInvalido) {
+      Alert.alert('Email invalido', `Confira o email: ${emailInvalido}`);
+      return;
+    }
+
     setSalvando(true);
     try {
       const emails = Array.from(
-        new Set([...normalizarEmails(form.convidados), ...amigosEscolhidos.map((amigo) => amigo.email)]),
+        new Set([...emailsDigitados, ...amigosEscolhidos.map((amigo) => amigo.email)]),
       );
       const convidadoUids = amigosEscolhidos.map((amigo) => amigo.uid);
 
@@ -797,7 +811,8 @@ export default function Social() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
@@ -831,27 +846,6 @@ export default function Social() {
           contentContainerStyle={styles.contentInner}
           showsVerticalScrollIndicator={false}
         >
-          {notificacoes.length > 0 && (
-            <View style={styles.notificationsPanel}>
-              <Text style={styles.panelTitle}>Notificacoes</Text>
-              {notificacoes.map((notificacao) => (
-                <TouchableOpacity
-                  key={notificacao.id}
-                  style={styles.notificationItem}
-                  onPress={() => abrirNotificacao(notificacao)}
-                >
-                  <View style={styles.notificationIcon}>
-                    <MaterialIcons name="notifications" size={18} color={BLUE_DARK} />
-                  </View>
-                  <View style={styles.notificationContent}>
-                    <Text style={styles.notificationTitle}>{notificacao.titulo}</Text>
-                    <Text style={styles.notificationMessage}>{notificacao.mensagem}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
           <View style={styles.friendPanel}>
             <Text style={styles.panelTitle}>Amigos no app</Text>
             <View style={styles.friendAddRow}>
@@ -901,9 +895,10 @@ export default function Social() {
                     setBuscaLocal(local);
                     setForm((current) => ({ ...current, local, placeId: '' }));
                   }}
-                  placeholder="Buscar restaurante ou mercado"
+                placeholder="Buscar restaurante ou mercado"
                   placeholderTextColor="#667085"
                 />
+                <Text style={styles.helperText}>Selecione um resultado da busca para vincular o evento.</Text>
                 {buscandoLocal && <ActivityIndicator color={BLUE_DARK} style={styles.localLoader} />}
                 {resultadosLocal.length > 0 && (
                   <View style={styles.localResults}>
@@ -1271,6 +1266,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     color: INK,
     marginBottom: 10,
+  },
+  helperText: {
+    color: '#4B6475',
+    fontSize: 12,
+    marginTop: -4,
+    marginBottom: 8,
   },
   inputHalf: { flex: 1 },
   textArea: { minHeight: 86, paddingTop: 12, textAlignVertical: 'top' },

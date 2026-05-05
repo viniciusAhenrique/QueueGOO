@@ -20,6 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth } from '@/firebaseconfig';
 import { sincronizarPrimeiroAcesso } from '@/src/services/authServices';
+import { isValidEmail, normalizeEmail } from '@/src/utils/validation';
 
 const BLUE = '#4FC3F7';
 const BLUE_DARK = '#0D47A1';
@@ -44,7 +45,13 @@ export default function Login() {
 
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), senha);
+      const emailLimpo = normalizeEmail(email);
+      if (!isValidEmail(emailLimpo)) {
+        Alert.alert('Email invalido', 'Digite um email valido para entrar.');
+        return;
+      }
+
+      await signInWithEmailAndPassword(auth, emailLimpo, senha);
       await sincronizarPrimeiroAcesso();
       router.replace('/screens/mapa');
     } catch (error: any) {
@@ -65,7 +72,8 @@ export default function Login() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"

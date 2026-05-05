@@ -35,6 +35,7 @@ import PostCard, { PostItem } from '@/app/components/PostCard';
 import PostComposerModal from '@/app/components/PostComposerModal';
 import { auth, db } from '@/firebaseconfig';
 import { avatarFallback, formatarDataCurta } from '@/src/services/socialServices';
+import { isValidEmail, normalizeEmail } from '@/src/utils/validation';
 
 type Amigo = {
   uid: string;
@@ -192,9 +193,13 @@ export default function Feed() {
   const enviarPedidoAmizade = async () => {
     if (!usuario) return;
 
-    const email = novoAmigoEmail.trim().toLowerCase();
+    const email = normalizeEmail(novoAmigoEmail);
     if (!email) {
       Alert.alert('Informe um email', 'Digite o email de alguem cadastrado no app.');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      Alert.alert('Email invalido', 'Digite um email valido para adicionar um amigo.');
       return;
     }
 
@@ -323,7 +328,8 @@ export default function Feed() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
           <View style={styles.topBar}>

@@ -22,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { auth, db } from '@/firebaseconfig';
 import { sincronizarPrimeiroAcesso } from '@/src/services/authServices';
 import { extensaoDaImagem, uploadImagemLocal } from '@/src/services/uploadServices';
+import { isValidEmail, normalizeEmail } from '@/src/utils/validation';
 
 type FotoCadastro = {
   uri: string;
@@ -38,6 +39,8 @@ export default function Cadastro() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmSenha, setConfirmSenha] = useState('');
+  const [mostrarSenha, setMostrarSenha] = useState(false);
+  const [mostrarConfirmSenha, setMostrarConfirmSenha] = useState(false);
   const [foto, setFoto] = useState<FotoCadastro | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -73,10 +76,15 @@ export default function Cadastro() {
 
   const handleCadastrar = async () => {
     const nomeLimpo = nome.trim();
-    const emailLimpo = email.trim().toLowerCase();
+    const emailLimpo = normalizeEmail(email);
 
     if (!nomeLimpo || !emailLimpo || !senha || !confirmSenha) {
       Alert.alert('Erro', 'Preencha todos os campos.');
+      return;
+    }
+
+    if (!isValidEmail(emailLimpo)) {
+      Alert.alert('Email invalido', 'Digite um email valido para criar a conta.');
       return;
     }
 
@@ -142,7 +150,8 @@ export default function Cadastro() {
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
@@ -194,7 +203,9 @@ export default function Cadastro() {
               value={senha}
               onChangeText={setSenha}
               placeholder="Minimo 6 caracteres"
-              secureTextEntry
+              secureTextEntry={!mostrarSenha}
+              rightIcon={mostrarSenha ? 'visibility-off' : 'visibility'}
+              onRightIconPress={() => setMostrarSenha((value) => !value)}
               editable={!loading}
             />
             <ProfileInput
@@ -202,7 +213,9 @@ export default function Cadastro() {
               value={confirmSenha}
               onChangeText={setConfirmSenha}
               placeholder="Repita sua senha"
-              secureTextEntry
+              secureTextEntry={!mostrarConfirmSenha}
+              rightIcon={mostrarConfirmSenha ? 'visibility-off' : 'visibility'}
+              onRightIconPress={() => setMostrarConfirmSenha((value) => !value)}
               editable={!loading}
             />
 
@@ -236,13 +249,22 @@ export default function Cadastro() {
 
 type ProfileInputProps = React.ComponentProps<typeof TextInput> & {
   label: string;
+  rightIcon?: React.ComponentProps<typeof MaterialIcons>['name'];
+  onRightIconPress?: () => void;
 };
 
-function ProfileInput({ label, style, ...props }: ProfileInputProps) {
+function ProfileInput({ label, style, rightIcon, onRightIconPress, ...props }: ProfileInputProps) {
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput {...props} style={[styles.input, style]} placeholderTextColor="#7A8B99" />
+      <View style={styles.inputShell}>
+        <TextInput {...props} style={[styles.input, style]} placeholderTextColor="#7A8B99" />
+        {rightIcon && (
+          <TouchableOpacity style={styles.inputIconButton} onPress={onRightIconPress}>
+            <MaterialIcons name={rightIcon} size={20} color="#64748B" />
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
@@ -347,16 +369,28 @@ const styles = StyleSheet.create({
     fontFamily: 'Urbanist_700Bold',
     marginBottom: 7,
   },
-  input: {
+  inputShell: {
     minHeight: 52,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#B3E5FC',
     backgroundColor: '#F8FCFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  input: {
+    flex: 1,
+    minHeight: 50,
     color: INK,
     paddingHorizontal: 12,
     fontSize: 15,
     fontFamily: 'Urbanist_500Medium',
+  },
+  inputIconButton: {
+    width: 44,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryButton: {
     marginTop: 4,

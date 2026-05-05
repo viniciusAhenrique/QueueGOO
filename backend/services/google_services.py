@@ -12,6 +12,49 @@ from models.restaurante import RestauranteCache
 PLACES_BASE_URL = "https://maps.googleapis.com/maps/api/place"
 CACHE_TTL_HORAS = 24  
 
+TIPOS_COMIDA_PERMITIDOS = {
+    "restaurant",
+    "food",
+    "meal_takeaway",
+    "meal_delivery",
+    "cafe",
+    "bakery",
+    "bar",
+    "supermarket",
+    "grocery_or_supermarket",
+    "convenience_store",
+}
+
+TIPOS_BLOQUEADOS = {
+    "car_repair",
+    "car_dealer",
+    "car_wash",
+    "gas_station",
+    "hardware_store",
+    "home_goods_store",
+    "furniture_store",
+    "electronics_store",
+    "clothing_store",
+    "shoe_store",
+    "store",
+    "shopping_mall",
+    "real_estate_agency",
+    "insurance_agency",
+    "bank",
+    "atm",
+}
+
+PALAVRAS_CULINARIA = {
+    "japanese": "japonesa sushi restaurante",
+    "japonesa": "japonesa sushi restaurante",
+    "sushi": "sushi restaurante",
+    "brazilian": "brasileira restaurante",
+    "brasileira": "brasileira restaurante",
+    "pizza": "pizza pizzaria restaurante",
+    "mercado": "mercado supermercado comida",
+    "supermarket": "mercado supermercado comida",
+}
+
 async def get_dados_restaurante(restaurante_id: str, place_id: str, db: Session) -> dict:
 
     cache = db.query(RestauranteCache).filter_by(restaurante_id=restaurante_id).first()
@@ -52,6 +95,7 @@ async def _buscar_apenas_restaurantes_proximos(lat: float, lng: float, raio_metr
 async def buscar_restaurantes_proximos(lat: float, lng: float, raio_metros: int = 1500, tipo_culinaria: str = None) -> list:
     tipos_busca = ["restaurant"] if tipo_culinaria else ["restaurant", "supermarket"]
     resultados_por_place_id = {}
+    keyword = _normalizar_keyword_comida(tipo_culinaria)
 
     async with httpx.AsyncClient() as client:
         for tipo_google in tipos_busca:
@@ -62,8 +106,8 @@ async def buscar_restaurantes_proximos(lat: float, lng: float, raio_metros: int 
                 "key":      GOOGLE_API_KEY,
             }
 
-            if tipo_culinaria:
-                params["keyword"] = tipo_culinaria
+            if keyword:
+                params["keyword"] = keyword
 
             response = await client.get(f"{PLACES_BASE_URL}/nearbysearch/json", params=params)
             response.raise_for_status()
@@ -74,7 +118,7 @@ async def buscar_restaurantes_proximos(lat: float, lng: float, raio_metros: int 
 
             for resultado in data.get("results", []):
                 place_id = resultado.get("place_id")
-                if place_id:
+                if place_id and _eh_resultado_de_comida(resultado):
                     resultados_por_place_id[place_id] = resultado
 
     return [_formatar_resultado_nearby(r) for r in resultados_por_place_id.values()]
@@ -108,8 +152,10 @@ async def buscar_detalhes_por_place_id(place_id: str) -> dict | None:
 
 
 async def buscar_por_texto(texto: str, lat: float = None, lng: float = None) -> list:
+    termo = _normalizar_keyword_comida(texto)
     params = {
-        "query": f"{texto} restaurante mercado",
+        "query": termo,
+        "type": "restaurant",
         "key":   GOOGLE_API_KEY,
     }
 
@@ -125,7 +171,8 @@ async def buscar_por_texto(texto: str, lat: float = None, lng: float = None) -> 
     if data.get("status") not in ("OK", "ZERO_RESULTS"):
         raise Exception(f"Google Places erro: {data.get('status')}")
 
-    return [_formatar_resultado_nearby(r) for r in data.get("results", [])]
+    resultados = [r for r in data.get("results", []) if _eh_resultado_de_comida(r)]
+    return [_formatar_resultado_nearby(r) for r in resultados]
 
 
 async def geocodificar_endereco(endereco: str) -> dict:
@@ -317,6 +364,44 @@ def _formatar_resultado_nearby(resultado: dict) -> dict:
         "aberto_agora":    resultado.get("opening_hours", {}).get("open_now"),
         "tipos":           resultado.get("types", []),
     }
+
+
+def _normalizar_keyword_comida(texto: str | None) -> str:
+    if not texto:
+        return "restaurante comida"
+
+    termo = texto.strip().lower()
+    return PALAVRAS_CULINARIA.get(termo, f"{termo} restaurante comida")
+
+
+def _eh_resultado_de_comida(resultado: dict) -> bool:
+    tipos = set(resultado.get("types", []))
+    nome = str(resultado.get("name", "")).lower()
+
+    if tipos.intersection(TIPOS_BLOQUEADOS):
+        return False
+
+    if tipos.intersection(TIPOS_COMIDA_PERMITIDOS):
+        return True
+
+    palavras_comida = (
+        "restaurante",
+        "restaurant",
+        "pizzaria",
+        "pizza",
+        "sushi",
+        "lanchonete",
+        "burger",
+        "hamburg",
+        "bar",
+        "cafe",
+        "cafeteria",
+        "padaria",
+        "bakery",
+        "mercado",
+        "supermercado",
+    )
+    return any(palavra in nome for palavra in palavras_comida)
 
 
 def _montar_url_foto(photo_reference: str, largura: int = 800) -> str:
