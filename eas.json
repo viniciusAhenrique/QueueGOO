@@ -10,6 +10,9 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://queuegoo-api.onrender.com"
+      },
       "android": {
         "buildType": "apk"
       }
