@@ -3,7 +3,7 @@
 #import <React/RCTBridge.h>
 #import <React/RCTEventDispatcher.h>
 #import <React/RCTUIManager.h>
-#import "RCTUIManagerObserverCoordinator.h"
+#import <React/RCTUIManagerObserverCoordinator.h>
 #import "RNCOnInsetsChangeEvent.h"
 #import "RNCSafeAreaUtils.h"
 
@@ -23,10 +23,9 @@
   RCTAssertParam(eventDispatcher);
 
   if ((self = [super initWithFrame:CGRectZero])) {
-#if !TARGET_OS_TV && !TARGET_OS_OSX
-
     _eventDispatcher = eventDispatcher;
 
+#if !TARGET_OS_TV && !TARGET_OS_OSX
     [NSNotificationCenter.defaultCenter addObserver:self
                                            selector:@selector(invalidateSafeAreaInsets)
                                                name:UIKeyboardDidShowNotification

@@ -18,6 +18,7 @@ import type {ParserOptions} from '../ParserOptions';
 import type {
   BinaryExpression,
   BreakStatement,
+  DestructuringObjectProperty,
   ESNode,
   Expression,
   Identifier,
@@ -53,6 +54,7 @@ import {
   numberLiteral,
   stringLiteral,
   throwStatement,
+  typeofExpression,
   variableDeclaration,
 } from '../utils/Builders';
 import {createGenID} from '../utils/GenID';
@@ -279,7 +281,7 @@ function analyzePattern(
       const [id, kind] =
         target.type === 'MatchBindingPattern'
           ? [target.id, target.kind]
-          : [target, 'const'];
+          : [target, ('const': 'const')];
       checkDuplicateBindingName(seenBindingNames, pattern, id.name);
       checkBindingKind(pattern, kind);
       const binding: Binding = {type: 'id', key, kind, id};
@@ -476,29 +478,26 @@ function testsOfCondition(
       return [isArray, lengthCheck];
     }
     case 'object': {
-      // typeof <x> === 'object' && <x> !== null
+      // (typeof <x> === 'object' && <x> !== null) || typeof <x> === 'function'
       const {key} = condition;
-      const typeofObject: BinaryExpression = {
-        type: 'BinaryExpression',
-        left: {
-          type: 'UnaryExpression',
-          operator: 'typeof',
-          argument: expressionOfKey(root, key),
-          prefix: true,
-          ...etc(),
-        },
-        right: stringLiteral('object'),
-        operator: '===',
-        ...etc(),
-      };
-      const notNull = {
+      const typeofObject = typeofExpression(
+        expressionOfKey(root, key),
+        'object',
+      );
+      const typeofFunction = typeofExpression(
+        expressionOfKey(root, key),
+        'function',
+      );
+      const notNull: BinaryExpression = {
         type: 'BinaryExpression',
         left: expressionOfKey(root, key),
         right: nullLiteral(),
         operator: '!==',
         ...etc(),
       };
-      return [typeofObject, notNull];
+      return [
+        disjunction([conjunction([typeofObject, notNull]), typeofFunction]),
+      ];
     }
     case 'prop-exists': {
       // <propName> in <x>
@@ -563,7 +562,7 @@ function statementsOfBindings(
         const destructuring: ObjectPattern = {
           type: 'ObjectPattern',
           properties: exclude
-            .map(prop =>
+            .map((prop): DestructuringObjectProperty =>
               prop.type === 'Identifier'
                 ? {
                     type: 'Property',
@@ -702,13 +701,13 @@ function mapMatchExpression(node: MatchExpression): Expression {
   const {argument, cases} = node;
   const {hasBindings, hasWildcard, analyses} = analyzeCases(cases);
 
-  const isSimpleArgument = calculateSimpleArgument(argument);
+  const isSimpleArgument = !hasBindings && calculateSimpleArgument(argument);
   const genRoot: Identifier | null = !isSimpleArgument ? genIdent() : null;
   const root: Expression = genRoot == null ? argument : genRoot;
 
   // No bindings and a simple argument means we can use nested conditional
   // expressions.
-  if (!hasBindings && isSimpleArgument) {
+  if (isSimpleArgument) {
     const wildcardAnalaysis = hasWildcard ? analyses.pop() : null;
     const lastBody =
       wildcardAnalaysis != null
@@ -737,7 +736,7 @@ function mapMatchExpression(node: MatchExpression): Expression {
   // If the original argument is simple, no need for a new variable.
   const statements: Array<Statement> = analyses.map(
     ({conditions, bindings, guard, body}) => {
-      const returnNode = {
+      const returnNode: Statement = {
         type: 'ReturnStatement',
         argument: body,
         ...etc(),
@@ -799,10 +798,10 @@ function mapMatchExpression(node: MatchExpression): Expression {
  */
 function mapMatchStatement(node: MatchStatement): Statement {
   const {argument, cases} = node;
-  const {hasWildcard, analyses} = analyzeCases(cases);
+  const {hasBindings, hasWildcard, analyses} = analyzeCases(cases);
 
   const topLabel: Identifier = genIdent();
-  const isSimpleArgument = calculateSimpleArgument(argument);
+  const isSimpleArgument = !hasBindings && calculateSimpleArgument(argument);
   const genRoot: Identifier | null = !isSimpleArgument ? genIdent() : null;
   const root: Expression = genRoot == null ? argument : genRoot;
 

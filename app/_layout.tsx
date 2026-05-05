@@ -57,6 +57,34 @@ export default function RootLayout() {
           headerTitleAlign: "center",
         }}
       />
+      <Stack.Screen
+        name="perfil"
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="favoritos"
+        options={{
+          title: 'Favoritos',
+          headerStyle: {
+            backgroundColor: "#4FC3F7",
+          },
+          headerTintColor: "black",
+          headerTitleAlign: "center",
+        }}
+      />
+      <Stack.Screen
+        name="BuscarLayer"
+        options={{
+          title: 'Buscar',
+          headerStyle: {
+            backgroundColor: "#4FC3F7",
+          },
+          headerTintColor: "black",
+          headerTitleAlign: "center",
+        }}
+      />
     </Stack>
   );
 }

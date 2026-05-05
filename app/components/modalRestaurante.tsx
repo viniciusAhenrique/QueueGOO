@@ -6,9 +6,10 @@ import { useRouter } from 'expo-router';
 interface BalaoRestauranteProps {
   nome: string;
   tipo: string;
-  lotacao: number;        
+  lotacao: number | null;
+  exibirLotacao?: boolean;
   placeId: string;
-  foto: string | null;    
+  foto: string | null;
   onClose: () => void;
 }
 
@@ -16,6 +17,7 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
   nome,
   tipo,
   lotacao,
+  exibirLotacao = true,
   placeId,
   foto,
   onClose,
@@ -23,14 +25,14 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
   const router = useRouter();
 
   const calcularTempoEspera = (lot: number): string => {
-    if (lot > 80) return '30–50 min';
-    if (lot >= 40) return '15–30 min';
-    return '5–15 min';
+    if (lot > 80) return '30-50 min';
+    if (lot >= 40) return '15-30 min';
+    return '5-15 min';
   };
 
   const calcularPessoasNaFila = (lot: number): string => {
     if (lot > 80) return '+30 pessoas';
-    if (lot >= 40) return '10–30 pessoas';
+    if (lot >= 40) return '10-30 pessoas';
     return 'menos de 10';
   };
 
@@ -40,7 +42,7 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
         <TouchableOpacity
           style={styles.closeButton}
           onPress={onClose}
-          accessibilityLabel="Fechar balão"
+          accessibilityLabel="Fechar balao"
         >
           <MaterialIcons name="close" size={20} color="#666" />
         </TouchableOpacity>
@@ -57,24 +59,33 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
           </Text>
           <Text style={styles.subtitulo}>{tipo}</Text>
 
-          <View style={styles.infoContainer}>
-            <Text style={styles.infoTexto}>
-              Lotação: <Text style={styles.destaque}>{lotacao}%</Text>
-            </Text>
-            <Text style={styles.infoTexto}> • Espera: {calcularTempoEspera(lotacao)}</Text>
-          </View>
+          {exibirLotacao && lotacao !== null && (
+            <>
+              <View style={styles.infoContainer}>
+                <Text style={styles.infoTexto}>
+                  Lotacao: <Text style={styles.destaque}>{lotacao}%</Text>
+                </Text>
+                <Text style={styles.infoTexto}> - Espera: {calcularTempoEspera(lotacao)}</Text>
+              </View>
 
-          <Text style={styles.infoFila}>
-            Fila estimada: <Text style={styles.destaque}>{calcularPessoasNaFila(lotacao)}</Text>
-          </Text>
+              <Text style={styles.infoFila}>
+                Fila estimada: <Text style={styles.destaque}>{calcularPessoasNaFila(lotacao)}</Text>
+              </Text>
+            </>
+          )}
+
+          {exibirLotacao && lotacao === null && (
+            <Text style={styles.infoFila}>Lotacao indisponivel no momento.</Text>
+          )}
+
           <TouchableOpacity
             style={styles.botao}
             onPress={() =>
               router.push({
-                pathname: '/restaurante',
+                pathname: '/screens/restaurante',
                 params: {
                   placeId,
-                  lotacao: lotacao.toString(), 
+                  ...(lotacao !== null ? { lotacao: lotacao.toString() } : {}),
                 },
               })
             }
@@ -83,7 +94,6 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
           >
             <Text style={styles.botaoTexto}>Saiba mais</Text>
           </TouchableOpacity>
-
         </View>
       </View>
 

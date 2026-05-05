@@ -1,0 +1,714 @@
+//mapa.tsx mudará para python posteriormente.
+
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  View,
+  StyleSheet,
+  Dimensions,
+  TouchableOpacity,
+  Image,
+  Text,
+  Animated,
+  TouchableWithoutFeedback,
+  ActivityIndicator,
+  Alert,
+  BackHandler,
+  Platform,
+} from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import * as Location from 'expo-location';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { auth, db } from '@/firebaseconfig';
+import BalaoRestaurante from '../components/modalRestaurante';
+import {
+  buscarLotacaoAtual,
+  buscarRestaurantesProximos,
+} from '@/src/services/restauranteServices';
+
+const { width } = Dimensions.get('window');
+const menuWidth = width * 0.7;
+
+const mapStyleLimpo = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+  { featureType: 'administrative', elementType: 'labels', stylers: [{ visibility: 'simplified' }] },
+  { featureType: 'landscape.man_made', stylers: [{ visibility: 'off' }] },
+];
+
+function estaAberto(item: { aberto_agora?: boolean }) {
+  return item.aberto_agora === true;
+}
+
+const PIN_COLORS = {
+  desconhecida: '#8E8E93',
+  baixa: '#34C759',
+  media: '#FFCC00',
+  alta: '#FF3B30',
+};
+
+// Tipos adicionados para evitar inferência `never`/`any` nos estados.
+// Alteracao recente: Coordinates foi renomeado para Coordenadas para padronizar em portugues.
+type Coordenadas = {
+  latitude: number;
+  longitude: number;
+};
+
+type Restaurante = {
+  id: string;
+  nome: string;
+  tipo: string;
+  latitude: number;
+  longitude: number;
+  foto: string | null;
+  lotacao: number | null;
+};
+
+export default function MapaComTudo() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Estado com união explícita para coordenadas ainda não carregadas.
+  // Referencia atualizada para o novo nome do tipo Coordenadas.
+  const [userLocation, setUserLocation] = useState<Coordenadas | null>(null);
+  const [lugares, setLugares] = useState<Restaurante[]>([]);
+  const [lugarSelecionado, setLugarSelecionado] = useState<Restaurante | null>(null);
+  const [authUser, setAuthUser] = useState<User | null>(auth.currentUser);
+  const [notificacoesPendentes, setNotificacoesPendentes] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const slideAnim = useState(new Animated.Value(-menuWidth))[0];
+  // Ref tipada para liberar `animateToRegion` com segurança.
+  const mapRef = useRef<MapView | null>(null);
+  const router = useRouter();
+  const locationSubscription = useRef<Location.LocationSubscription | null>(null);
+  const nomeUsuario = authUser?.displayName || authUser?.email || 'Usuário';
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Começa como `null` até existir uma posição anterior para comparação de distância.
+  // Referencia atualizada para o novo nome do tipo Coordenadas.
+  const ultimaPosicaoBuscada = useRef<Coordenadas | null>(null);
+
+  const toggleMenu = () => {
+    Animated.timing(slideAnim, {
+      toValue: menuOpen ? -menuWidth : 0,
+      duration: 250,
+      useNativeDriver: false,
+    }).start(() => setMenuOpen(!menuOpen));
+  };
+
+  const fecharApp = () => {
+    setMenuOpen(false);
+    if (Platform.OS === 'android') {
+      BackHandler.exitApp();
+      return;
+    }
+
+    Alert.alert('Sessao mantida', 'Feche o app pelo seletor do sistema. Sua conta continua conectada.');
+  };
+
+  const centralizarLocal = () => {
+    if (userLocation && mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      });
+    }
+  };
+
+  const irParaBuscar = () => router.push('/screens/BuscarLayer');
+  const irParaFavoritos = () => router.push('/screens/favoritos');
+  const irParaReservas = () => {
+    setMenuOpen(false);
+    router.push('/screens/reservas' as never);
+  };
+  const irParaSocial = () => {
+    setMenuOpen(false);
+    router.push('/screens/social' as never);
+  };
+  const irParaFeed = () => {
+    setMenuOpen(false);
+    router.push('/screens/feed' as never);
+  };
+  const irParaPerfil = () => {
+    setMenuOpen(false);
+    router.push('/screens/perfil');
+  };
+
+  const getPinColor = (lot: number | null) => {
+    if (lot === null) return PIN_COLORS.desconhecida;
+    if (lot > 80) return PIN_COLORS.alta;
+    if (lot >= 40) return PIN_COLORS.media;
+    return PIN_COLORS.baixa;
+  };
+
+  const handleMapDrag = () => {
+    setLugarSelecionado(null);
+  };
+
+  useEffect(() => onAuthStateChanged(auth, setAuthUser), []);
+
+  useEffect(() => {
+    if (!authUser) {
+      setNotificacoesPendentes(0);
+      return undefined;
+    }
+
+    const unsubscribe = onSnapshot(
+      collection(db, 'usuarios', authUser.uid, 'notificacoes'),
+      (snapshot) => {
+        setNotificacoesPendentes(
+          snapshot.docs.filter((documento) => !documento.data().lida).length,
+        );
+      },
+      (error) => {
+        console.error('Erro ao carregar notificacoes:', error);
+        setNotificacoesPendentes(0);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [authUser]);
+
+  useEffect(() => {
+    if (!authUser) return;
+
+    const interval = setInterval(() => {
+      atualizarLotacoes();
+    }, 120000);
+
+    return () => clearInterval(interval);
+  }, [authUser, lugares]);
+
+  useEffect(() => {
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+
+      const location = await Location.getCurrentPositionAsync({});
+      // Referencia atualizada para o novo nome do tipo Coordenadas.
+      const initialCoords: Coordenadas = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+      setUserLocation(initialCoords);
+      buscarGooglePlaces(initialCoords.latitude, initialCoords.longitude);
+
+      locationSubscription.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 10,
+          timeInterval: 5000,
+        },
+        (newLocation) => {
+          const { latitude, longitude } = newLocation.coords;
+          setUserLocation({ latitude, longitude });
+
+          if (debounceTimer.current) clearTimeout(debounceTimer.current);
+          debounceTimer.current = setTimeout(() => {
+            const ultima = ultimaPosicaoBuscada.current;
+            // Primeira execução do watcher: busca imediatamente e inicializa referência.
+            if (!ultima) {
+              buscarGooglePlaces(latitude, longitude);
+              ultimaPosicaoBuscada.current = { latitude, longitude };
+              return;
+            }
+
+            const distancia = Math.sqrt(
+              Math.pow(latitude - ultima.latitude, 2) +
+                Math.pow(longitude - ultima.longitude, 2),
+            );
+            if (distancia > 0.001) {
+              buscarGooglePlaces(latitude, longitude);
+              ultimaPosicaoBuscada.current = { latitude, longitude };
+            }
+          }, 1000);
+        },
+      );
+    })();
+
+    return () => {
+      locationSubscription.current?.remove();
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, []);
+
+  const buscarGooglePlaces = async (latitude: number, longitude: number) => {
+    setLoading(true);
+    try {
+      const data = await buscarRestaurantesProximos(latitude, longitude);
+
+      const restaurantesFiltradosBase: Restaurante[] = data
+        .filter((item) => item.google_place_id && item.latitude && item.longitude)
+        .filter(estaAberto)
+        .filter((item) => !item.nota_google || item.nota_google >= 3.5)
+        .map((item) => ({
+          id: item.google_place_id,
+          nome: item.nome,
+          tipo: item.tipos?.some((tipo) => tipo.includes('supermarket') || tipo.includes('grocery'))
+            ? 'Mercado'
+            : 'Restaurante',
+          latitude: item.latitude,
+          longitude: item.longitude,
+          foto: item.foto_url || null,
+          lotacao: null,
+        }));
+
+      if (!auth.currentUser) {
+        setLugares(restaurantesFiltradosBase);
+        return;
+      }
+
+      const restaurantesComLotacao = await Promise.all(
+        restaurantesFiltradosBase.map(async (restaurante) => ({
+          ...restaurante,
+          lotacao: await buscarLotacao(restaurante.id),
+        })),
+      );
+
+      const totalComLotacao = restaurantesComLotacao.filter(
+        (restaurante) => restaurante.lotacao !== null,
+      ).length;
+      console.info(
+        `Lotacao carregada para ${totalComLotacao}/${restaurantesComLotacao.length} restaurantes.`,
+      );
+
+      setLugares(restaurantesComLotacao);
+    } catch (e) {
+      console.error('Erro ao buscar lugares:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const buscarLotacao = async (placeId: string): Promise<number | null> => {
+    try {
+      const { lotacao } = await buscarLotacaoAtual(placeId);
+      return typeof lotacao === 'number' ? lotacao : null;
+    } catch (error) {
+      console.warn('Lotação indisponível para placeId:', placeId, error);
+      return null;
+    }
+  };
+
+  const atualizarLotacoes = async () => {
+    if (!auth.currentUser || lugares.length === 0) return;
+
+    const lugaresAtualizados = await Promise.all(
+      lugares.map(async (lugar) => ({
+        ...lugar,
+        lotacao: await buscarLotacao(lugar.id),
+      })),
+    );
+
+    setLugares(lugaresAtualizados);
+  };
+
+  return (
+    <View style={styles.container}>
+      <MapView
+        ref={mapRef}
+        provider={PROVIDER_GOOGLE}
+        style={styles.map}
+        showsUserLocation
+        showsMyLocationButton={false}
+        initialRegion={{
+          latitude: userLocation?.latitude || -25.42,
+          longitude: userLocation?.longitude || -49.26,
+          latitudeDelta: 0.01,
+          longitudeDelta: 0.01,
+        }}
+        onPress={handleMapDrag}
+        onPanDrag={handleMapDrag}
+        customMapStyle={mapStyleLimpo}
+      >
+        {lugares.map((lugar) => (
+          <Marker
+            key={lugar.id}
+            coordinate={{ latitude: lugar.latitude, longitude: lugar.longitude }}
+            pinColor={getPinColor(lugar.lotacao)}
+            onPress={() => setLugarSelecionado(lugar)}
+          />
+        ))}
+      </MapView>
+
+      {lugarSelecionado && (
+        <View style={styles.balaoFixo}>
+          <BalaoRestaurante
+            nome={lugarSelecionado.nome}
+            tipo={lugarSelecionado.tipo}
+            lotacao={lugarSelecionado.lotacao}
+            exibirLotacao={Boolean(authUser)}
+            placeId={lugarSelecionado.id}
+            foto={lugarSelecionado.foto}
+            onClose={() => setLugarSelecionado(null)}
+          />
+        </View>
+      )}
+
+      {loading && (
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      )}
+
+      <View style={styles.mapHeader}>
+        <TouchableOpacity style={styles.headerIconButton} onPress={toggleMenu}>
+          <Feather name="menu" size={24} color="#0D47A1" />
+        </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>QueueGOO</Text>
+          <Text style={styles.headerSubtitle}>{lugares.length} restaurantes proximos</Text>
+        </View>
+        <TouchableOpacity style={styles.headerIconButton} onPress={irParaBuscar}>
+          <Feather name="search" size={23} color="#0D47A1" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.notificationButton} onPress={irParaFeed}>
+          <MaterialIcons name="notifications" size={22} color="#0D47A1" />
+          {notificacoesPendentes > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>
+                {notificacoesPendentes > 9 ? '9+' : notificacoesPendentes}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.legend}>
+        <LegendItem color={PIN_COLORS.baixa} label="Baixa" />
+        <LegendItem color={PIN_COLORS.media} label="Media" />
+        <LegendItem color={PIN_COLORS.alta} label="Alta" />
+        <LegendItem color={PIN_COLORS.desconhecida} label="Sem dado" />
+      </View>
+
+      <TouchableOpacity style={styles.locationButton} onPress={centralizarLocal}>
+        <MaterialIcons name="gps-fixed" size={24} color="#0D47A1" />
+      </TouchableOpacity>
+
+      <View style={styles.zoomContainer}>
+        <TouchableOpacity
+          style={styles.zoomButton}
+          onPress={() => {
+            if (mapRef.current && userLocation)
+              mapRef.current.animateToRegion({
+                latitude: userLocation.latitude,
+                longitude: userLocation.longitude,
+                latitudeDelta: 0.005,
+                longitudeDelta: 0.005,
+              });
+          }}
+        >
+          <MaterialIcons name="add" size={22} color="#0D47A1" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.zoomButton}
+          onPress={() => {
+            if (mapRef.current && userLocation)
+              mapRef.current.animateToRegion({
+                latitude: userLocation.latitude,
+                longitude: userLocation.longitude,
+                latitudeDelta: 0.03,
+                longitudeDelta: 0.03,
+              });
+          }}
+        >
+          <MaterialIcons name="remove" size={22} color="#0D47A1" />
+        </TouchableOpacity>
+      </View>
+
+      {menuOpen && (
+        <TouchableWithoutFeedback onPress={toggleMenu}>
+          <View style={styles.overlay} />
+        </TouchableWithoutFeedback>
+      )}
+
+      <Animated.View style={[styles.drawer, { left: slideAnim }]}>
+        <View style={styles.drawerHeader}>
+          <Text style={styles.drawerTitle}>Menu</Text>
+          <TouchableOpacity onPress={toggleMenu}>
+            <MaterialIcons name="close" size={28} color="#0D47A1" />
+          </TouchableOpacity>
+        </View>
+        
+        <TouchableOpacity style={styles.profile} onPress={irParaPerfil} activeOpacity={0.85}>
+          <Image
+            source={{
+              uri: authUser?.photoURL || `https://i.pravatar.cc/100?u=${authUser?.uid || 'usuario'}`,
+            }}
+            style={styles.avatar}
+          />
+          <View style={styles.profileText}>
+            <Text style={styles.welcome}>Olá, {nomeUsuario.split('@')[0]}</Text>
+            <Text style={styles.profileHint}>Ver perfil</Text>
+          </View>
+        </TouchableOpacity>
+        <View style={styles.menuItems}>
+          <DrawerItem label="Feed" icon="dynamic-feed" onPress={irParaFeed} />
+          <DrawerItem label="Favoritos" icon="favorite" onPress={irParaFavoritos} />
+          <DrawerItem label="Reservas" icon="event-seat" onPress={irParaReservas} />
+          <DrawerItem label="Eventos" icon="event" onPress={irParaSocial} />
+          <DrawerItem label="Fechar app" icon="exit-to-app" onPress={fecharApp} />
+        </View>
+      </Animated.View>
+    </View>
+  );
+}
+
+// Props explícitas removem `implicit any` no componente.
+type DrawerItemProps = {
+  label: string;
+  icon: React.ComponentProps<typeof MaterialIcons>['name'];
+  onPress: () => void;
+};
+
+function DrawerItem({ label, icon, onPress }: DrawerItemProps) {
+  return (
+    <TouchableOpacity style={styles.menuItem} onPress={onPress}>
+      <View style={styles.menuIcon}>
+        <MaterialIcons name={icon} size={21} color="#0D47A1" />
+      </View>
+      <Text style={styles.menuLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+type LegendItemProps = {
+  color: string;
+  label: string;
+};
+
+function LegendItem({ color, label }: LegendItemProps) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  map: { width: '100%', height: '100%' },
+  loading: {
+    position: 'absolute',
+    top: 20,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  legend: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 24,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    elevation: 4,
+    zIndex: 10,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendText: {
+    fontSize: 12,
+    color: '#333',
+  },
+  mapHeader: {
+    position: 'absolute',
+    top: 48,
+    left: 16,
+    right: 16,
+    minHeight: 62,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    shadowColor: '#0D47A1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 6,
+    zIndex: 10,
+  },
+  headerIconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E3F2FD',
+  },
+  notificationButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E3F2FD',
+    marginLeft: 8,
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#C62828',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  headerCenter: {
+    flex: 1,
+    paddingHorizontal: 12,
+  },
+  headerTitle: {
+    color: '#1e232c',
+    fontSize: 18,
+    fontFamily: 'Poppins_700Bold',
+  },
+  headerSubtitle: {
+    color: '#4B6475',
+    fontSize: 12,
+    marginTop: 1,
+    fontFamily: 'Urbanist_600SemiBold',
+  },
+  balaoFixo: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'white',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 20,
+    zIndex: 1000,
+  },
+  locationButton: {
+    position: 'absolute',
+    bottom: 84,
+    right: 20,
+    backgroundColor: 'white',
+    padding: 10,
+    borderRadius: 8,
+    elevation: 5,
+    zIndex: 10,
+  },
+  zoomContainer: {
+    position: 'absolute',
+    right: 20,
+    bottom: 150,
+    justifyContent: 'space-between',
+    height: 100,
+    zIndex: 10,
+  },
+  zoomButton: {
+    backgroundColor: 'white',
+    padding: 10,
+    marginVertical: 5,
+    borderRadius: 8,
+    elevation: 5,
+  },
+  drawer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: menuWidth,
+    backgroundColor: '#E3F2FD',
+    paddingTop: 50,
+    paddingHorizontal: 18,
+    elevation: 8,
+    zIndex: 20,
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    zIndex: 15,
+  },
+  drawerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingRight: 8,
+  },
+  drawerTitle: {
+    fontSize: 20,
+    fontFamily: 'Poppins_700Bold',
+    color: '#1e232c',
+  },
+  profile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+  },
+  avatar: { width: 50, height: 50, borderRadius: 25 },
+  profileText: { marginLeft: 12, flex: 1 },
+  welcome: { fontSize: 16, fontWeight: '700', color: '#111827' },
+  profileHint: { color: '#0D47A1', fontSize: 12, fontFamily: 'Urbanist_700Bold', marginTop: 2 },
+  menuItems: { gap: 10 },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 48,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+  },
+  menuIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E3F2FD',
+  },
+  menuLabel: { fontSize: 15, color: '#111827', fontFamily: 'Urbanist_700Bold' },
+});
+
+

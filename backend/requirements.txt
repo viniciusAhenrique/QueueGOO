@@ -1,0 +1,32 @@
+# ============================================================
+# QueueGOO - Backend Dependencies
+# Python 3.11+
+# Instalar: pip install -r requirements.txt
+# ============================================================
+
+# --- API Framework ---
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+
+# --- Banco de Dados (Supabase/PostgreSQL) ---
+supabase==2.10.0
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# --- Firebase ---
+firebase-admin==6.5.0
+
+# --- Google ---
+httpx==0.27.0
+populartimes @ git+https://github.com/m-wrzr/populartimes.git
+
+# --- Variaveis de Ambiente ---
+python-dotenv==1.0.1
+
+# --- Validacao de Dados ---
+pydantic==2.7.1
+pydantic-settings==2.2.1
+
+# --- Utilitarios ---
+python-multipart==0.0.9

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -18,39 +18,71 @@ import {
   removerFavorito,
   verificarFavorito,
 } from './favoritosService';
+import { getPlaceDetailsUrl, getPlacePhotoUrl } from '@/config/googleApi';
 
-const GOOGLE_API_KEY = 'AIzaSyDr1HnkERYXONsiFrX0dTEa_cHcaWS3AQc';
+// Interface para tipificar detalhes do restaurante
+interface RestauranteDetalhes {
+  name: string;
+  rating?: number;
+  types?: string[];
+  photos?: { photo_reference: string }[];
+  formatted_address?: string;
+  formatted_phone_number?: string;
+  opening_hours?: { weekday_text?: string[] };
+}
+
+interface RestauranteFavorito {
+  id: string;
+  placeId: string;
+  nome: string;
+  tipo: string;
+  lotacao: number;
+  foto: string | null;
+}
 
 export default function Restaurante() {
   const { placeId, lotacao } = useLocalSearchParams<{ placeId: string; lotacao?: string }>();
   const lotacaoPercentual = Number(lotacao || 0);
 
-  const [detalhes, setDetalhes] = useState(null);
+  const [detalhes, setDetalhes] = useState<RestauranteDetalhes | null>(null);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [favoritado, setFavoritado] = useState(false);
 
   const user = auth.currentUser;
 
-  const buscarDetalhesDoLugar = async () => {
+  const buscarDetalhesDoLugar = useCallback(async () => {
+    if (!placeId) {
+      setLoading(false);
+      return;
+    }
+    
     try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,rating,types,photos,formatted_address,formatted_phone_number,opening_hours&key=${GOOGLE_API_KEY}`
-      );
+      const url = getPlaceDetailsUrl(placeId);
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
-      if (data.result) setDetalhes(data.result);
-      else Alert.alert('Erro', 'Informações não encontradas.');
+      if (data.result) {
+        setDetalhes(data.result);
+      } else {
+        Alert.alert('Erro', 'Informações do restaurante não encontradas.');
+        console.warn('Detalhes não encontrados para placeId:', placeId);
+      }
     } catch (error) {
-      Alert.alert('Erro', 'Erro ao buscar informações.');
+      console.error('Erro ao buscar detalhes do restaurante:', error);
+      Alert.alert('Erro', 'Não foi possível carregar as informações do restaurante.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [placeId]);
 
   useEffect(() => {
-    if (!placeId) return;
     buscarDetalhesDoLugar();
-  }, []);
+  }, [buscarDetalhesDoLugar]);
 
   useEffect(() => {
     const checarFavorito = async () => {
@@ -60,58 +92,112 @@ export default function Restaurante() {
       }
     };
     checarFavorito();
-  }, [placeId]);
+  }, [placeId, user]);
 
   const toggleFavorito = async () => {
-    if (!user || !detalhes) {
-      Alert.alert('Você precisa estar logado');
+    if (!user) {
+      Alert.alert('Acesso Negado', 'Você precisa estar logado para adicionar favoritos.');
+      return;
+    }
+    
+    if (!detalhes || !placeId) {
+      Alert.alert('Erro', 'Informações do restaurante não carregadas.');
       return;
     }
 
-    const restaurante = {
-      id: placeId,
-      nome: detalhes.name,
-      tipo: detalhes.types?.[0] || 'Restaurante',
-      lotacao: lotacaoPercentual,
-      foto: detalhes.photos?.[0]?.photo_reference
-        ? obterUrlImagem(detalhes.photos[0].photo_reference)
-        : null,
-    };
+    try {
+      const restaurante: RestauranteFavorito = {
+        id: placeId,
+        placeId: placeId,
+        nome: detalhes.name,
+        tipo: detalhes.types?.[0]?.replace('_', ' ') || 'Restaurante',
+        lotacao: lotacaoPercentual,
+        foto: detalhes.photos?.[0]?.photo_reference
+          ? obterUrlImagem(detalhes.photos[0].photo_reference)
+          : null,
+      };
 
-    if (favoritado) {
-      await removerFavorito(user.uid, placeId);
-      setFavoritado(false);
-    } else {
-      await adicionarFavorito(user.uid, restaurante);
-      setFavoritado(true);
+      if (favoritado) {
+        await removerFavorito(user.uid, placeId);
+        setFavoritado(false);
+        Alert.alert('Sucesso', 'Removido dos favoritos.');
+      } else {
+        await adicionarFavorito(user.uid, restaurante);
+        setFavoritado(true);
+        Alert.alert('Sucesso', 'Adicionado aos favoritos.');
+      }
+    } catch (error) {
+      console.error('Erro ao alternar favorito:', error);
+      Alert.alert('Erro', 'Não foi possível atualizar os favoritos.');
     }
   };
 
-  const obterUrlImagem = (photoRef) =>
-    `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photoRef}&key=${GOOGLE_API_KEY}`;
+  const obterUrlImagem = (photoRef: string): string =>
+    getPlacePhotoUrl(photoRef, 800);
 
-  const calcularTempoEspera = (lot) => {
+  const calcularTempoEspera = (lot: number): string => {
     if (lot > 80) return '30–50 min';
     if (lot >= 40) return '15–30 min';
     return '5–15 min';
   };
 
-  const calcularPessoasNaFila = (lot) => {
+  const calcularPessoasNaFila = (lot: number): string => {
     if (lot > 80) return '+30 pessoas';
     if (lot >= 40) return '10–30 pessoas';
     return 'menos de 10';
   };
 
-  const calcularStatusLotacao = (lot) => {
+  const calcularStatusLotacao = (lot: number): 'baixa' | 'media' | 'alta' => {
     if (lot > 80) return 'alta';
     if (lot >= 40) return 'media';
     return 'baixa';
   };
 
-  const renderLotacao = (nivel) => {
-    const cores = { baixa: '#2E7D32', media: '#F9A825', alta: '#C62828' };
-    const icones = { baixa: 'check-circle', media: 'error', alta: 'warning' };
-    const textos = { baixa: 'Lotação Baixa', media: 'Lotação Média', alta: 'Lotação Alta' };
+  const traduzirDiasEHorarios = (horariosTexto: string[] | undefined): string[] => {
+    if (!horariosTexto) return [];
+
+    const traducaoDias: { [key: string]: string } = {
+      'Monday': 'Segunda-feira',
+      'Tuesday': 'Terça-feira',
+      'Wednesday': 'Quarta-feira',
+      'Thursday': 'Quinta-feira',
+      'Friday': 'Sexta-feira',
+      'Saturday': 'Sábado',
+      'Sunday': 'Domingo',
+    };
+
+    const converterPara24h = (hora: string): string => {
+      const regex = /(\d{1,2}):(\d{2})\s(AM|PM)/gi;
+      return hora.replace(regex, (match, horas, minutos, periodo) => {
+        let h = parseInt(horas, 10);
+        const m = minutos;
+        
+        if (periodo.toUpperCase() === 'PM' && h !== 12) {
+          h += 12;
+        } else if (periodo.toUpperCase() === 'AM' && h === 12) {
+          h = 0;
+        }
+        
+        return `${String(h).padStart(2, '0')}:${m}`;
+      });
+    };
+
+    return horariosTexto.map((horario) => {
+      let texto = horario;
+      // Traduzir dias
+      for (const [inglês, português] of Object.entries(traducaoDias)) {
+        texto = texto.replace(new RegExp(`^${inglês}`, 'i'), português);
+      }
+      // Converter para 24h
+      texto = converterPara24h(texto);
+      return texto;
+    });
+  };
+
+  const renderLotacao = (nivel: 'baixa' | 'media' | 'alta') => {
+    const cores = { baixa: '#2E7D32', media: '#F9A825', alta: '#C62828' } as const;
+    const icones = { baixa: 'check-circle', media: 'error', alta: 'warning' } as const;
+    const textos = { baixa: 'Lotação Baixa', media: 'Lotação Média', alta: 'Lotação Alta' } as const;
 
     return (
       <View style={styles.lotacaoBox}>
@@ -175,7 +261,8 @@ export default function Restaurante() {
           <Text style={styles.sectionTitle}>Telefone:</Text>
           <Text style={styles.info}>{detalhes.formatted_phone_number || 'Não disponível'}</Text>
 
-          {detalhes.opening_hours?.weekday_text?.map((hora, i) => (
+          <Text style={styles.sectionTitle}>Horário de Funcionamento:</Text>
+          {traduzirDiasEHorarios(detalhes.opening_hours?.weekday_text).map((hora, i) => (
             <Text key={i} style={styles.info}>{hora}</Text>
           ))}
         </View>

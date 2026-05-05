@@ -13,6 +13,9 @@ import { getAuth } from 'firebase/auth';
 import {
   doc,
   getDoc,
+  addDoc,
+  collection,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../../firebaseconfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -21,6 +24,7 @@ import * as Linking from 'expo-linking';
 interface ModalReservaProps {
   visible: boolean;
   onClose: () => void;
+  onCriarEvento?: (dados: { pessoas: string; data: Date }) => void;
   placeId: string;
   nomeRestaurante: string;
   cidade: string;
@@ -31,6 +35,7 @@ interface ModalReservaProps {
 const ModalReserva: React.FC<ModalReservaProps> = ({
   visible,
   onClose,
+  onCriarEvento,
   placeId,
   nomeRestaurante,
   cidade,
@@ -48,14 +53,19 @@ const ModalReserva: React.FC<ModalReservaProps> = ({
     const user = auth.currentUser;
     if (!user) return null;
 
-    const docUser = await getDoc(doc(db, 'usuarios', user.uid));
-    if (!docUser.exists()) return null;
+    try {
+      const docUser = await getDoc(doc(db, 'usuarios', user.uid));
+      if (!docUser.exists()) return null;
 
-    return {
-      uid: user.uid,
-      nome: docUser.data().nome,
-      telefone: docUser.data().telefone,
-    };
+      return {
+        uid: user.uid,
+        nome: docUser.data().nome,
+        telefone: docUser.data().telefone,
+      };
+    } catch (error) {
+      console.error('Erro ao buscar dados do usuario:', error);
+      return null;
+    }
   };
 
   const registrarReserva = async () => {
@@ -64,36 +74,66 @@ const ModalReserva: React.FC<ModalReservaProps> = ({
     const usuario = await buscarDadosUsuario();
     if (!usuario) {
       setCarregando(false);
-      Alert.alert('Atenção', 'Apenas usuários logados podem fazer reservas.');
+      Alert.alert('Login necessario', 'Entre na sua conta para fazer reservas.');
       return;
     }
 
     if (!numPessoas.trim() || isNaN(Number(numPessoas))) {
       setCarregando(false);
-      Alert.alert('Atenção', 'Informe corretamente o número de pessoas.');
+      Alert.alert('Dados incompletos', 'Informe corretamente o numero de pessoas.');
       return;
     }
 
     if (!telefoneRestaurante) {
       setCarregando(false);
-      Alert.alert('Erro', 'Telefone do restaurante indisponível.');
+      Alert.alert('Telefone indisponivel', 'Este restaurante nao informou telefone para reserva.');
       return;
     }
 
     const dataTexto = formatarData(dataReserva);
     const horaTexto = formatarHora(dataReserva);
 
-    const mensagem = `Olá, gostaria de fazer uma reserva no restaurante *${nomeRestaurante}* para *${numPessoas} pessoas* no dia *${dataTexto}* às *${horaTexto}*. Meu nome é *${usuario.nome}*.`;
+    const mensagem = `Ola, gostaria de fazer uma reserva no restaurante *${nomeRestaurante}* para *${numPessoas} pessoas* no dia *${dataTexto}* as *${horaTexto}*. Meu nome e *${usuario.nome}*.`;
 
-    const numeroWhatsApp = telefoneRestaurante.replace(/\D/g, ''); // remove símbolos
+    const numeroWhatsApp = telefoneRestaurante.replace(/\D/g, '');
     const url = `https://wa.me/55${numeroWhatsApp}?text=${encodeURIComponent(mensagem)}`;
 
-    await Linking.openURL(url);
+    try {
+      await Linking.openURL(url);
 
-    setCarregando(false);
-    onClose();
-    setNumPessoas('');
-    setDataReserva(new Date());
+      await addDoc(collection(db, 'reservas'), {
+        userId: usuario.uid,
+        placeId,
+        restauranteNome: nomeRestaurante,
+        cidade,
+        capacidadeMaxima,
+        telefoneRestaurante,
+        numPessoas: Number(numPessoas),
+        data: dataTexto,
+        hora: horaTexto,
+        status: 'solicitada_whatsapp',
+        criadoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      });
+
+      onClose();
+      setNumPessoas('');
+      setDataReserva(new Date());
+    } catch (error) {
+      console.error('Erro ao registrar reserva:', error);
+      Alert.alert('Erro', 'Nao foi possivel registrar a reserva. Confira as permissoes do Firestore.');
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  const iniciarEvento = () => {
+    if (!numPessoas.trim() || isNaN(Number(numPessoas))) {
+      Alert.alert('Dados incompletos', 'Informe o numero de pessoas antes de criar o evento.');
+      return;
+    }
+
+    onCriarEvento?.({ pessoas: numPessoas, data: dataReserva });
   };
 
   const formatarData = (date: Date) => {
@@ -108,32 +148,49 @@ const ModalReserva: React.FC<ModalReservaProps> = ({
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.overlay}>
         <View style={styles.container}>
-          <Text style={styles.title}>Confirmar Reserva</Text>
-          <Text style={styles.text}>Restaurante: {nomeRestaurante}</Text>
-          <Text style={styles.text}>Cidade: {cidade}</Text>
+          <View style={styles.header}>
+            <View style={styles.headerIcon}>
+              <Text style={styles.headerIconText}>R</Text>
+            </View>
+            <View style={styles.headerText}>
+              <Text style={styles.title}>Reserva</Text>
+              <Text style={styles.subtitle} numberOfLines={2}>{nomeRestaurante}</Text>
+            </View>
+          </View>
 
+          <View style={styles.summary}>
+            <Text style={styles.summaryText}>Cidade: {cidade || 'Nao informada'}</Text>
+            <Text style={styles.summaryText}>
+              Capacidade estimada: {capacidadeMaxima || 100} pessoas
+            </Text>
+          </View>
+
+          <Text style={styles.label}>Quantidade de pessoas</Text>
           <TextInput
             style={styles.input}
-            placeholder="Número de pessoas"
+            placeholder="Ex: 4"
             keyboardType="numeric"
             value={numPessoas}
             onChangeText={setNumPessoas}
+            placeholderTextColor="#667085"
           />
 
+          <Text style={styles.label}>Data</Text>
           <TouchableOpacity
-            style={styles.input}
+            style={styles.pickerInput}
             onPress={() => setShowDatePicker(true)}
           >
-            <Text style={{ fontSize: 16, color: '#000' }}>
+            <Text style={styles.pickerText}>
               {formatarData(dataReserva)}
             </Text>
           </TouchableOpacity>
 
+          <Text style={styles.label}>Horario</Text>
           <TouchableOpacity
-            style={styles.input}
+            style={styles.pickerInput}
             onPress={() => setShowTimePicker(true)}
           >
-            <Text style={{ fontSize: 16, color: '#000' }}>
+            <Text style={styles.pickerText}>
               {formatarHora(dataReserva)}
             </Text>
           </TouchableOpacity>
@@ -183,9 +240,19 @@ const ModalReserva: React.FC<ModalReservaProps> = ({
             disabled={carregando}
           >
             <Text style={styles.buttonText}>
-              {carregando ? 'Enviando...' : 'Confirmar Reserva'}
+              {carregando ? 'Abrindo WhatsApp...' : 'Reservar pelo WhatsApp'}
             </Text>
           </TouchableOpacity>
+
+          {onCriarEvento && (
+            <TouchableOpacity
+              style={styles.eventButton}
+              onPress={iniciarEvento}
+              disabled={carregando}
+            >
+              <Text style={styles.eventButtonText}>Criar evento com estes dados</Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
             <Text style={styles.cancelText}>Cancelar</Text>
@@ -205,35 +272,109 @@ const styles = StyleSheet.create({
   },
   container: {
     backgroundColor: 'white',
-    padding: 20,
-    borderRadius: 12,
-    width: '85%',
+    padding: 18,
+    borderRadius: 16,
+    width: '88%',
     elevation: 5,
   },
-  title: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 12,
-    textAlign: 'center',
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
   },
-  text: {
-    fontSize: 16,
-    marginBottom: 8,
+  headerIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#E3F2FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  headerIconText: {
+    color: '#0D47A1',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  headerText: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1e232c',
+  },
+  subtitle: {
+    color: '#4B6475',
+    fontSize: 14,
+    marginTop: 2,
+  },
+  summary: {
+    borderRadius: 10,
+    backgroundColor: '#F4FAFF',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    padding: 10,
+    marginBottom: 14,
+  },
+  summaryText: {
+    color: '#344054',
+    fontSize: 13,
+    marginBottom: 2,
+  },
+  label: {
+    color: '#344054',
+    fontWeight: '700',
+    fontSize: 13,
+    marginBottom: 6,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#CCC',
+    borderColor: '#B3E5FC',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 14,
     marginBottom: 12,
     justifyContent: 'center',
+    color: '#1e232c',
+    backgroundColor: '#FFFFFF',
+  },
+  pickerInput: {
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    minHeight: 48,
+    marginBottom: 12,
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  pickerText: {
+    fontSize: 16,
+    color: '#1e232c',
+    fontWeight: '600',
   },
   button: {
     backgroundColor: '#0D47A1',
+    minHeight: 48,
+    borderRadius: 8,
+    marginTop: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  eventButton: {
+    borderWidth: 1,
+    borderColor: '#0D47A1',
     paddingVertical: 12,
     borderRadius: 8,
     marginTop: 10,
+    backgroundColor: '#E3F2FD',
+  },
+  eventButtonText: {
+    color: '#0D47A1',
+    fontWeight: '700',
+    fontSize: 16,
+    textAlign: 'center',
   },
   buttonText: {
     color: 'white',
