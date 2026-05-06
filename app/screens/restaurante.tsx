@@ -33,6 +33,19 @@ interface RestauranteDetalhes {
   google_maps_url?: string;
   reservavel_google?: boolean;
   horarios?: string[];
+  avaliacao_externa?: {
+    fonte: string;
+    nota?: number | null;
+    total?: number | null;
+    ranking?: string | null;
+    url?: string | null;
+    rating_image_url?: string | null;
+  };
+  fotos_externas?: Array<{
+    url: string;
+    legenda?: string | null;
+    atribuicao?: string | null;
+  }>;
 }
 
 interface RestauranteFavorito {
@@ -134,10 +147,10 @@ export default function Restaurante() {
   };
 
   const abrirCardapioOuSite = async () => {
-    const destino = detalhes?.site_url || detalhes?.google_maps_url;
+    const destino = detalhes?.site_url || detalhes?.avaliacao_externa?.url || detalhes?.google_maps_url;
 
     if (!destino) {
-      Alert.alert('Indisponivel', 'Este restaurante nao informou site ou pagina do Google Maps.');
+      Alert.alert('Indisponivel', 'Este restaurante nao informou site ou pagina externa.');
       return;
     }
 
@@ -246,7 +259,12 @@ export default function Restaurante() {
   if (loading) return <ActivityIndicator size="large" color="#4FC3F7" style={{ marginTop: 50 }} />;
   if (!detalhes) return <Text style={{ padding: 20 }}>Erro ao carregar dados.</Text>;
 
-  const imagem = detalhes.foto_url || 'https://via.placeholder.com/800x400.png?text=Restaurante';
+  const imagem =
+    detalhes.foto_url ||
+    detalhes.fotos_externas?.[0]?.url ||
+    'https://via.placeholder.com/800x400.png?text=Restaurante';
+  const avaliacaoPrincipal = detalhes.avaliacao_externa?.nota ?? detalhes.nota_google;
+  const fonteAvaliacao = detalhes.avaliacao_externa?.fonte;
   const tempoEspera = lotacaoPercentual !== null ? calcularTempoEspera(lotacaoPercentual) : null;
   const pessoasFila = lotacaoPercentual !== null ? calcularPessoasNaFila(lotacaoPercentual) : null;
   const statusLotacao = lotacaoPercentual !== null ? calcularStatusLotacao(lotacaoPercentual) : null;
@@ -275,7 +293,9 @@ export default function Restaurante() {
           <View style={styles.metaRow}>
             <View style={styles.metaPill}>
               <MaterialIcons name="star" size={16} color="#B7791F" />
-              <Text style={styles.metaText}>{detalhes.nota_google || 'Sem avaliacao'}</Text>
+              <Text style={styles.metaText}>
+                {avaliacaoPrincipal ? `${avaliacaoPrincipal}${fonteAvaliacao ? ` ${fonteAvaliacao}` : ''}` : 'Sem avaliacao'}
+              </Text>
             </View>
             <View style={styles.metaPill}>
               <MaterialIcons name="restaurant" size={16} color={BLUE_DARK} />
@@ -338,8 +358,22 @@ export default function Restaurante() {
 
           <TouchableOpacity style={styles.linkButton} onPress={abrirCardapioOuSite}>
             <MaterialIcons name="open-in-new" size={18} color={BLUE_DARK} />
-            <Text style={styles.linkButtonText}>Abrir cardapio, site ou Google Maps</Text>
+            <Text style={styles.linkButtonText}>Abrir cardapio, site ou avaliacoes</Text>
           </TouchableOpacity>
+
+          {detalhes.avaliacao_externa && (
+            <View style={styles.panel}>
+              <Text style={styles.sectionTitle}>Avaliacoes</Text>
+              <Text style={styles.info}>
+                {detalhes.avaliacao_externa.fonte}: {detalhes.avaliacao_externa.nota || 'Sem nota'}
+                {detalhes.avaliacao_externa.total ? ` (${detalhes.avaliacao_externa.total} avaliacoes)` : ''}
+              </Text>
+              {detalhes.avaliacao_externa.ranking && (
+                <Text style={styles.info}>{detalhes.avaliacao_externa.ranking}</Text>
+              )}
+              <Text style={styles.attributionText}>Dados exibidos via {detalhes.avaliacao_externa.fonte}.</Text>
+            </View>
+          )}
 
           <View style={styles.panel}>
             <Text style={styles.sectionTitle}>Informacoes</Text>
@@ -526,4 +560,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   hoursText: { color: '#344054', fontSize: 13, lineHeight: 20, marginBottom: 2 },
+  attributionText: {
+    color: '#667085',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
+    fontWeight: '700',
+  },
 });

@@ -5,8 +5,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Generator
 from sqlalchemy.orm import Session
 
-from config import GOOGLE_API_KEY
+from config import GOOGLE_API_KEY, GOOGLE_PLACES_FALLBACK_ENABLED, POPULARTIMES_FALLBACK_ENABLED
 from models.restaurante import RestauranteCache
+from services import place_catalog_service
 
 
 PLACES_BASE_URL = "https://maps.googleapis.com/maps/api/place"
@@ -62,6 +63,9 @@ async def get_dados_restaurante(restaurante_id: str, place_id: str, db: Session)
     if _cache_valido(cache):
         return _cache_para_dict(cache)
 
+    if not GOOGLE_PLACES_FALLBACK_ENABLED:
+        return _cache_para_dict(cache) if cache else {}
+
     dados_google = await _buscar_place_details(place_id)
 
     if dados_google:
@@ -93,6 +97,16 @@ async def _buscar_apenas_restaurantes_proximos(lat: float, lng: float, raio_metr
 
 
 async def buscar_restaurantes_proximos(lat: float, lng: float, raio_metros: int = 1500, tipo_culinaria: str = None) -> list:
+    resultados_catalogo = await place_catalog_service.buscar_restaurantes_proximos(
+        lat, lng, raio_metros, tipo_culinaria
+    )
+    if resultados_catalogo or not GOOGLE_PLACES_FALLBACK_ENABLED:
+        return resultados_catalogo
+
+    return await _buscar_google_restaurantes_proximos(lat, lng, raio_metros, tipo_culinaria)
+
+
+async def _buscar_google_restaurantes_proximos(lat: float, lng: float, raio_metros: int = 1500, tipo_culinaria: str = None) -> list:
     tipos_busca = ["restaurant"] if tipo_culinaria else ["restaurant", "supermarket"]
     resultados_por_place_id = {}
     keyword = _normalizar_keyword_comida(tipo_culinaria)
@@ -125,6 +139,10 @@ async def buscar_restaurantes_proximos(lat: float, lng: float, raio_metros: int 
 
 
 async def buscar_detalhes_por_place_id(place_id: str) -> dict | None:
+    dados_catalogo = await place_catalog_service.buscar_detalhes(place_id)
+    if dados_catalogo or not GOOGLE_PLACES_FALLBACK_ENABLED:
+        return dados_catalogo
+
     dados = await _buscar_place_details(place_id)
     if not dados:
         return None
@@ -152,6 +170,14 @@ async def buscar_detalhes_por_place_id(place_id: str) -> dict | None:
 
 
 async def buscar_por_texto(texto: str, lat: float = None, lng: float = None) -> list:
+    resultados_catalogo = await place_catalog_service.buscar_por_texto(texto, lat, lng)
+    if resultados_catalogo or not GOOGLE_PLACES_FALLBACK_ENABLED:
+        return resultados_catalogo
+
+    return await _buscar_google_por_texto(texto, lat, lng)
+
+
+async def _buscar_google_por_texto(texto: str, lat: float = None, lng: float = None) -> list:
     termo = _normalizar_keyword_comida(texto)
     params = {
         "query": termo,
@@ -176,6 +202,9 @@ async def buscar_por_texto(texto: str, lat: float = None, lng: float = None) -> 
 
 
 async def geocodificar_endereco(endereco: str) -> dict:
+    if not GOOGLE_PLACES_FALLBACK_ENABLED:
+        return {}
+
     params = {
         "address": endereco,
         "key":     GOOGLE_API_KEY,
@@ -206,10 +235,13 @@ async def invalidar_cache(restaurante_id: str, db: Session):
         db.commit()
 
 def get_lotacao_atual(place_id: str) -> dict:
+    if not POPULARTIMES_FALLBACK_ENABLED:
+        return {"place_id": place_id, "lotacao": None, "fonte": "queuegoo"}
+
     try:
         data    = populartimes.get_id(GOOGLE_API_KEY, place_id)
         lotacao = data.get("current_popularity")  
-        return {"place_id": place_id, "lotacao": lotacao}
+        return {"place_id": place_id, "lotacao": lotacao, "fonte": "populartimes"}
     except Exception as e:
         print(f"[populartimes] Erro em {place_id}: {e}")
         return {"place_id": place_id, "lotacao": None}

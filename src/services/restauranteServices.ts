@@ -20,6 +20,19 @@ export interface RestauranteDetalhesApi extends RestauranteResumo {
   tipos?: string[];
   horarios?: string[];
   total_avaliacoes_google?: number;
+  avaliacao_externa?: {
+    fonte: string;
+    nota?: number | null;
+    total?: number | null;
+    ranking?: string | null;
+    url?: string | null;
+    rating_image_url?: string | null;
+  };
+  fotos_externas?: Array<{
+    url: string;
+    legenda?: string | null;
+    atribuicao?: string | null;
+  }>;
 }
 
 export interface LotacaoAtual {

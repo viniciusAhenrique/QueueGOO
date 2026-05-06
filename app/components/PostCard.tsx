@@ -11,7 +11,6 @@ import {
   serverTimestamp,
   updateDoc,
 } from 'firebase/firestore';
-import { deleteObject, ref } from 'firebase/storage';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -27,8 +26,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { db, storage } from '@/firebaseconfig';
+import { db } from '@/firebaseconfig';
 import { avatarFallback, formatarDataCurta } from '@/src/services/socialServices';
+import { deletarImagemLocal } from '@/src/services/uploadServices';
 
 export type PostItem = {
   id: string;
@@ -175,8 +175,8 @@ export default function PostCard({ post, currentUser, onOpenAuthor }: PostCardPr
         onPress: async () => {
           try {
             if (post.storagePath) {
-              await deleteObject(ref(storage, post.storagePath)).catch((error) => {
-                console.warn('Imagem do post nao foi removida do Storage:', error);
+              await deletarImagemLocal(post.storagePath).catch((error) => {
+                console.warn('Imagem do post nao foi removida do Supabase Storage:', error);
               });
             }
             await deleteDoc(doc(db, 'posts', post.id));

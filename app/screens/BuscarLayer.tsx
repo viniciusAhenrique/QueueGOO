@@ -81,7 +81,7 @@ export default function BuscarLayer() {
           );
 
       const filtrado = data
-        .filter((r) => r.aberto_agora === true)
+        .filter((r) => r.aberto_agora !== false)
         .filter((r) => {
           if (categoriaSelecionada === 'restaurant') {
             return r.tipos?.includes('restaurant') || !r.tipos?.includes('supermarket');
@@ -132,7 +132,9 @@ export default function BuscarLayer() {
           <Text style={styles.tipo}>{item.endereco}</Text>
           <View style={styles.cardFooter}>
             <Text style={styles.estrelas}>Nota: {item.nota_google ?? 'N/A'}</Text>
-            <Text style={styles.openBadge}>Aberto agora</Text>
+            <Text style={styles.openBadge}>
+              {item.aberto_agora === true ? 'Aberto agora' : 'Horario nao informado'}
+            </Text>
           </View>
         </View>
       </TouchableOpacity>

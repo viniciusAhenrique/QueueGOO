@@ -40,7 +40,20 @@ const mapStyleLimpo = [
 ];
 
 function estaAberto(item: { aberto_agora?: boolean }) {
-  return item.aberto_agora === true;
+  return item.aberto_agora !== false;
+}
+
+function calcularDistanciaMetros(origem: Coordenadas, destino: Coordenadas) {
+  const raioTerra = 6371000;
+  const lat1 = (origem.latitude * Math.PI) / 180;
+  const lat2 = (destino.latitude * Math.PI) / 180;
+  const deltaLat = ((destino.latitude - origem.latitude) * Math.PI) / 180;
+  const deltaLng = ((destino.longitude - origem.longitude) * Math.PI) / 180;
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+
+  return raioTerra * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 const PIN_COLORS = {
@@ -56,6 +69,16 @@ type Coordenadas = {
   latitude: number;
   longitude: number;
 };
+
+const COORDENADAS_TESTE_CURITIBA: Coordenadas = {
+  latitude: -25.4284,
+  longitude: -49.2733,
+};
+
+const coordenadasDevTeste =
+  __DEV__ && process.env.EXPO_PUBLIC_DEV_TEST_LOCATION === 'curitiba'
+    ? COORDENADAS_TESTE_CURITIBA
+    : null;
 
 type Restaurante = {
   id: string;
@@ -132,6 +155,15 @@ export default function MapaComTudo() {
     setMenuOpen(false);
     router.push('/screens/feed' as never);
   };
+
+  const moverMapaPara = (coordenadas: Coordenadas) => {
+    mapRef.current?.animateToRegion({
+      latitude: coordenadas.latitude,
+      longitude: coordenadas.longitude,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+    });
+  };
   const irParaNotificacoes = () => {
     setMenuOpen(false);
     router.push('/screens/notificacoes' as never);
@@ -189,22 +221,56 @@ export default function MapaComTudo() {
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
+      if (status !== 'granted') {
+        Alert.alert(
+          'Localizacao desativada',
+          'Permita o acesso a localizacao para ver restaurantes proximos de voce.',
+        );
+        if (coordenadasDevTeste) {
+          setUserLocation(coordenadasDevTeste);
+          ultimaPosicaoBuscada.current = coordenadasDevTeste;
+          moverMapaPara(coordenadasDevTeste);
+          buscarGooglePlaces(coordenadasDevTeste.latitude, coordenadasDevTeste.longitude);
+        }
+        return;
+      }
 
-      const location = await Location.getCurrentPositionAsync({});
-      // Referencia atualizada para o novo nome do tipo Coordenadas.
-      const initialCoords: Coordenadas = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      };
+      let initialCoords: Coordenadas | null = null;
+      try {
+        const lastKnownLocation = await Location.getLastKnownPositionAsync({
+          maxAge: 120000,
+          requiredAccuracy: 500,
+        });
+        const location =
+          lastKnownLocation ||
+          (await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          }));
+        // Referencia atualizada para o novo nome do tipo Coordenadas.
+        initialCoords = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        };
+      } catch (error) {
+        console.warn('Localizacao indisponivel:', error);
+      }
+
+      if (!initialCoords && coordenadasDevTeste) {
+        initialCoords = coordenadasDevTeste;
+      }
+
+      if (!initialCoords) return;
+
       setUserLocation(initialCoords);
+      ultimaPosicaoBuscada.current = initialCoords;
+      moverMapaPara(initialCoords);
       buscarGooglePlaces(initialCoords.latitude, initialCoords.longitude);
 
       locationSubscription.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
-          distanceInterval: 10,
-          timeInterval: 5000,
+          accuracy: Location.Accuracy.Balanced,
+          distanceInterval: 500,
+          timeInterval: 60000,
         },
         (newLocation) => {
           const { latitude, longitude } = newLocation.coords;
@@ -220,15 +286,12 @@ export default function MapaComTudo() {
               return;
             }
 
-            const distancia = Math.sqrt(
-              Math.pow(latitude - ultima.latitude, 2) +
-                Math.pow(longitude - ultima.longitude, 2),
-            );
-            if (distancia > 0.001) {
+            const distancia = calcularDistanciaMetros(ultima, { latitude, longitude });
+            if (distancia > 500) {
               buscarGooglePlaces(latitude, longitude);
               ultimaPosicaoBuscada.current = { latitude, longitude };
             }
-          }, 1000);
+          }, 3000);
         },
       );
     })();
@@ -243,7 +306,24 @@ export default function MapaComTudo() {
     setLoading(true);
     try {
       const filtro = typeof params.tipoCulinaria === 'string' ? params.tipoCulinaria : undefined;
-      const data = await buscarRestaurantesProximos(latitude, longitude, 1500, filtro);
+      let data = await buscarRestaurantesProximos(latitude, longitude, 1500, filtro);
+
+      const podeUsarAreaDevTeste =
+        coordenadasDevTeste &&
+        calcularDistanciaMetros(
+          { latitude, longitude },
+          coordenadasDevTeste,
+        ) > 3000;
+
+      if (data.length === 0 && podeUsarAreaDevTeste) {
+        data = await buscarRestaurantesProximos(
+          coordenadasDevTeste.latitude,
+          coordenadasDevTeste.longitude,
+          3000,
+          filtro,
+        );
+        moverMapaPara(coordenadasDevTeste);
+      }
 
       const restaurantesFiltradosBase: Restaurante[] = data
         .filter((item) => item.google_place_id && item.latitude && item.longitude)

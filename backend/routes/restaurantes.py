@@ -5,6 +5,7 @@ from database import get_db
 from services.firebase_service import verificar_token
 from services import google_service
 from models.restaurante import Restaurante, RestauranteCache
+from config import DEBUG
 
 router = APIRouter()
 
@@ -12,6 +13,33 @@ router = APIRouter()
 # ============================================================
 # BUSCA (dados vêm do Google Places via google_service)
 # ============================================================
+
+@router.get("/debug/proximos")
+async def debug_restaurantes_proximos(
+    lat:             float = Query(..., description="Latitude do teste"),
+    lng:             float = Query(..., description="Longitude do teste"),
+    raio:            int   = Query(1500, description="Raio em metros"),
+    tipo_culinaria:  str   = Query(None, description="Filtro por tipo ex: pizza, sushi"),
+):
+    """
+    Endpoint local de diagnostico. So funciona com DEBUG=true.
+    Usa a mesma origem de dados do app: Supabase primeiro, Geoapify sob demanda.
+    """
+    if not DEBUG:
+        raise HTTPException(status_code=404, detail="Endpoint disponivel apenas em DEBUG=true.")
+
+    try:
+        resultados = await google_service.buscar_restaurantes_proximos(lat, lng, raio, tipo_culinaria)
+        return {
+            "total": len(resultados),
+            "lat": lat,
+            "lng": lng,
+            "raio": raio,
+            "resultados": resultados,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
 
 @router.get("/proximos")
 async def restaurantes_proximos(
