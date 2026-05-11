@@ -10,6 +10,7 @@ export interface RestauranteResumo {
   foto_url?: string | null;
   aberto_agora?: boolean;
   tipos?: string[];
+  distancia_metros?: number;
 }
 
 export interface RestauranteDetalhesApi extends RestauranteResumo {
@@ -33,6 +34,19 @@ export interface RestauranteDetalhesApi extends RestauranteResumo {
     legenda?: string | null;
     atribuicao?: string | null;
   }>;
+  geoapify_extras?: {
+    descricao?: string;
+    cozinha?: string | string[];
+    reserva?: string | boolean;
+    capacidade?: string | number;
+    delivery?: string | boolean;
+    takeaway?: string | boolean;
+    outdoor_seating?: string | boolean;
+    wheelchair?: string | boolean;
+    estacionamento?: string | boolean;
+    playground?: string | boolean;
+    aceita_cartao?: string | boolean;
+  };
 }
 
 export interface LotacaoAtual {
@@ -63,12 +77,14 @@ export async function buscarRestaurantesPorTexto(
   query: string,
   latitude?: number,
   longitude?: number,
+  raio = 7000,
 ) {
   const params = new URLSearchParams({ q: query });
 
   if (latitude && longitude) {
     params.set('lat', String(latitude));
     params.set('lng', String(longitude));
+    params.set('raio', String(raio));
   }
 
   return apiFetch<RestauranteResumo[]>(`/restaurantes/buscar?${params.toString()}`);

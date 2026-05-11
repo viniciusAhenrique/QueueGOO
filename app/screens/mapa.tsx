@@ -14,6 +14,7 @@ import {
   Alert,
   BackHandler,
   Platform,
+  ScrollView,
 } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
@@ -25,6 +26,7 @@ import { auth, db } from '@/firebaseconfig';
 import BalaoRestaurante from '../components/modalRestaurante';
 import {
   buscarLotacaoAtual,
+  buscarRestaurantesPorTexto,
   buscarRestaurantesProximos,
 } from '@/src/services/restauranteServices';
 
@@ -70,6 +72,21 @@ type Coordenadas = {
   longitude: number;
 };
 
+const MAP_FILTERS = [
+  { label: 'Todos', value: '' },
+  { label: 'Restaurantes', value: 'restaurante' },
+  { label: 'Pizza', value: 'pizza' },
+  { label: 'Burger', value: 'burger' },
+  { label: 'Sushi', value: 'sushi' },
+  { label: 'Café', value: 'cafe' },
+  { label: 'Bar', value: 'bar' },
+  { label: 'Padaria', value: 'padaria' },
+  { label: 'Vegetariano', value: 'vegetarian' },
+  { label: 'Mercados', value: 'mercado' },
+];
+
+const MAP_RAIOS = [1000, 2000, 4000, 7000, 12000, 20000, 50000];
+
 const COORDENADAS_TESTE_CURITIBA: Coordenadas = {
   latitude: -25.4284,
   longitude: -49.2733,
@@ -90,6 +107,12 @@ type Restaurante = {
   lotacao: number | null;
 };
 
+function itemEhMercado(item: { tipos?: string[] }) {
+  return item.tipos?.some((tipo) =>
+    tipo.includes('supermarket') || tipo.includes('grocery') || tipo.includes('commercial.food'),
+  );
+}
+
 export default function MapaComTudo() {
   const [menuOpen, setMenuOpen] = useState(false);
   // Estado com união explícita para coordenadas ainda não carregadas.
@@ -104,21 +127,33 @@ export default function MapaComTudo() {
   // Ref tipada para liberar `animateToRegion` com segurança.
   const mapRef = useRef<MapView | null>(null);
   const router = useRouter();
-  const params = useLocalSearchParams<{ tipoCulinaria?: string; termoBusca?: string }>();
+  const params = useLocalSearchParams<{ tipoCulinaria?: string; termoBusca?: string; raio?: string }>();
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const nomeUsuario = authUser?.displayName || authUser?.email || 'Usuário';
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [filtroMapa, setFiltroMapa] = useState(
+    typeof params.tipoCulinaria === 'string' ? params.tipoCulinaria : '',
+  );
+  const [raioMapa, setRaioMapa] = useState(() => {
+    const recebido = Number(params.raio);
+    return Number.isFinite(recebido) && recebido > 0 ? recebido : 1500;
+  });
+  const filtroMapaRef = useRef(filtroMapa);
+  const raioMapaRef = useRef(raioMapa);
   // Começa como `null` até existir uma posição anterior para comparação de distância.
   // Referencia atualizada para o novo nome do tipo Coordenadas.
   const ultimaPosicaoBuscada = useRef<Coordenadas | null>(null);
 
-  const toggleMenu = () => {
+  const animarMenu = (abrir: boolean) => {
     Animated.timing(slideAnim, {
-      toValue: menuOpen ? -menuWidth : 0,
+      toValue: abrir ? 0 : -menuWidth,
       duration: 250,
       useNativeDriver: false,
-    }).start(() => setMenuOpen(!menuOpen));
+    }).start(() => setMenuOpen(abrir));
   };
+
+  const abrirMenu = () => animarMenu(true);
+  const fecharMenu = () => animarMenu(false);
 
   const fecharApp = () => {
     setMenuOpen(false);
@@ -219,6 +254,26 @@ export default function MapaComTudo() {
   }, [authUser, lugares]);
 
   useEffect(() => {
+    filtroMapaRef.current = filtroMapa;
+    raioMapaRef.current = raioMapa;
+  }, [filtroMapa, raioMapa]);
+
+  useEffect(() => {
+    if (typeof params.tipoCulinaria === 'string') {
+      setFiltroMapa(params.tipoCulinaria);
+    }
+    const recebido = Number(params.raio);
+    if (Number.isFinite(recebido) && recebido > 0) {
+      setRaioMapa(recebido);
+    }
+  }, [params.raio, params.tipoCulinaria]);
+
+  useEffect(() => {
+    if (!userLocation) return;
+    buscarGooglePlaces(userLocation.latitude, userLocation.longitude);
+  }, [filtroMapa, raioMapa, userLocation?.latitude, userLocation?.longitude]);
+
+  useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
@@ -305,8 +360,12 @@ export default function MapaComTudo() {
   const buscarGooglePlaces = async (latitude: number, longitude: number) => {
     setLoading(true);
     try {
-      const filtro = typeof params.tipoCulinaria === 'string' ? params.tipoCulinaria : undefined;
-      let data = await buscarRestaurantesProximos(latitude, longitude, 1500, filtro);
+      const filtro = filtroMapaRef.current.trim();
+      const raioAtual = raioMapaRef.current;
+      const dataInicial = filtro
+        ? await buscarRestaurantesPorTexto(filtro, latitude, longitude, raioAtual)
+        : await buscarRestaurantesProximos(latitude, longitude, raioAtual);
+      let data = dataInicial;
 
       const podeUsarAreaDevTeste =
         coordenadasDevTeste &&
@@ -319,8 +378,8 @@ export default function MapaComTudo() {
         data = await buscarRestaurantesProximos(
           coordenadasDevTeste.latitude,
           coordenadasDevTeste.longitude,
-          3000,
-          filtro,
+          Math.max(raioAtual, 3000),
+          filtro || undefined,
         );
         moverMapaPara(coordenadasDevTeste);
       }
@@ -329,12 +388,11 @@ export default function MapaComTudo() {
         .filter((item) => item.google_place_id && item.latitude && item.longitude)
         .filter(estaAberto)
         .filter((item) => !item.nota_google || item.nota_google >= 3.5)
+        .filter((item) => (filtro === 'mercado' ? itemEhMercado(item) : !itemEhMercado(item)))
         .map((item) => ({
           id: item.google_place_id,
           nome: item.nome,
-          tipo: item.tipos?.some((tipo) => tipo.includes('supermarket') || tipo.includes('grocery'))
-            ? 'Mercado'
-            : 'Restaurante',
+          tipo: itemEhMercado(item) ? 'Mercado' : 'Restaurante',
           latitude: item.latitude,
           longitude: item.longitude,
           foto: item.foto_url || null,
@@ -440,14 +498,14 @@ export default function MapaComTudo() {
       )}
 
       <View style={styles.mapHeader}>
-        <TouchableOpacity style={styles.headerIconButton} onPress={toggleMenu}>
+        <TouchableOpacity style={styles.headerIconButton} onPress={abrirMenu}>
           <Feather name="menu" size={24} color="#0D47A1" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>QueueGOO</Text>
           <Text style={styles.headerSubtitle}>
-            {params.termoBusca ? `${params.termoBusca}: ` : ''}
-            {lugares.length} restaurantes proximos
+            {filtroMapa ? `${filtroMapa}: ` : params.termoBusca ? `${params.termoBusca}: ` : ''}
+            {lugares.length} locais em ate {raioMapa / 1000} km
           </Text>
         </View>
         <TouchableOpacity style={styles.headerIconButton} onPress={irParaBuscar}>
@@ -470,6 +528,45 @@ export default function MapaComTudo() {
         <LegendItem color={PIN_COLORS.media} label="Media" />
         <LegendItem color={PIN_COLORS.alta} label="Alta" />
         <LegendItem color={PIN_COLORS.desconhecida} label="Sem dado" />
+      </View>
+
+      <View style={styles.filterPanel}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.filterRow}>
+            {MAP_FILTERS.map((item) => {
+              const ativo = filtroMapa === item.value || (!filtroMapa && !item.value);
+              return (
+                <TouchableOpacity
+                  key={item.value || 'todos'}
+                  style={[styles.filterChip, ativo && styles.filterChipActive]}
+                  onPress={() => setFiltroMapa(item.value)}
+                >
+                  <Text style={[styles.filterChipText, ativo && styles.filterChipTextActive]}>
+                    {item.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.filterRow}>
+            {MAP_RAIOS.map((raio) => {
+              const ativo = raioMapa === raio;
+              return (
+                <TouchableOpacity
+                  key={raio}
+                  style={[styles.radiusChip, ativo && styles.radiusChipActive]}
+                  onPress={() => setRaioMapa(raio)}
+                >
+                  <Text style={[styles.radiusChipText, ativo && styles.radiusChipTextActive]}>
+                    {raio / 1000} km
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
       </View>
 
       <TouchableOpacity style={styles.locationButton} onPress={centralizarLocal}>
@@ -509,7 +606,7 @@ export default function MapaComTudo() {
       </View>
 
       {menuOpen && (
-        <TouchableWithoutFeedback onPress={toggleMenu}>
+        <TouchableWithoutFeedback onPress={fecharMenu}>
           <View style={styles.overlay} />
         </TouchableWithoutFeedback>
       )}
@@ -517,7 +614,7 @@ export default function MapaComTudo() {
       <Animated.View style={[styles.drawer, { left: slideAnim }]}>
         <View style={styles.drawerHeader}>
           <Text style={styles.drawerTitle}>Menu</Text>
-          <TouchableOpacity onPress={toggleMenu}>
+          <TouchableOpacity onPress={fecharMenu}>
             <MaterialIcons name="close" size={28} color="#0D47A1" />
           </TouchableOpacity>
         </View>
@@ -691,20 +788,57 @@ const styles = StyleSheet.create({
   },
   balaoFixo: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+    left: 14,
+    right: 14,
+    bottom: 18,
     elevation: 20,
     zIndex: 1000,
   },
+  filterPanel: {
+    position: 'absolute',
+    top: 118,
+    left: 16,
+    right: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    paddingVertical: 8,
+    elevation: 5,
+    zIndex: 10,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  filterChip: {
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterChipActive: { backgroundColor: '#0D47A1', borderColor: '#0D47A1' },
+  filterChipText: { color: '#0D47A1', fontSize: 12, fontFamily: 'Urbanist_700Bold' },
+  filterChipTextActive: { color: '#FFFFFF' },
+  radiusChip: {
+    minHeight: 32,
+    borderRadius: 8,
+    backgroundColor: '#E3F2FD',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radiusChipActive: { backgroundColor: '#111827', borderColor: '#111827' },
+  radiusChipText: { color: '#0D47A1', fontSize: 12, fontFamily: 'Urbanist_700Bold' },
+  radiusChipTextActive: { color: '#FFFFFF' },
   locationButton: {
     position: 'absolute',
     bottom: 84,
@@ -749,7 +883,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(13,71,161,0.16)',
     zIndex: 15,
   },
   drawerHeader: {

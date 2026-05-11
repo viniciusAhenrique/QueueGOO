@@ -47,11 +47,14 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
           <MaterialIcons name="close" size={20} color="#666" />
         </TouchableOpacity>
 
-        <Image
-          source={{ uri: foto ?? 'https://via.placeholder.com/300x150?text=Restaurante' }}
-          style={styles.imagem}
-          resizeMode="cover"
-        />
+        {foto ? (
+          <Image source={{ uri: foto }} style={styles.imagem} resizeMode="cover" />
+        ) : (
+          <View style={styles.imagemFallback}>
+            <MaterialIcons name="restaurant" size={34} color="#0D47A1" />
+            <Text style={styles.fallbackText}>Sem foto disponivel</Text>
+          </View>
+        )}
 
         <View style={styles.conteudo}>
           <Text style={styles.titulo} numberOfLines={1} ellipsizeMode="tail">
@@ -80,15 +83,16 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
 
           <TouchableOpacity
             style={styles.botao}
-            onPress={() =>
+            onPress={() => {
+              onClose();
               router.push({
                 pathname: '/screens/restaurante',
                 params: {
                   placeId,
                   ...(lotacao !== null ? { lotacao: lotacao.toString() } : {}),
                 },
-              })
-            }
+              });
+            }}
             accessibilityRole="button"
             accessibilityLabel={`Saiba mais sobre ${nome}`}
           >
@@ -110,7 +114,7 @@ const styles = StyleSheet.create({
   },
   box: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: 8,
     overflow: 'hidden',
     elevation: 12,
     shadowColor: '#000',
@@ -131,13 +135,26 @@ const styles = StyleSheet.create({
   },
   imagem: {
     width: '100%',
-    height: 140,
+    height: 112,
+  },
+  imagemFallback: {
+    width: '100%',
+    height: 96,
+    backgroundColor: '#E3F2FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  fallbackText: {
+    color: '#0D47A1',
+    fontSize: 12,
+    fontWeight: '800',
   },
   conteudo: {
-    padding: 16,
+    padding: 12,
   },
   titulo: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#222',
     marginBottom: 4,
@@ -170,7 +187,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0D47A1',
     paddingVertical: 10,
     paddingHorizontal: 18,
-    borderRadius: 24,
+    borderRadius: 8,
     alignSelf: 'center',
   },
   botaoTexto: {
@@ -179,15 +196,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   seta: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 10,
-    borderLeftColor: 'transparent',
-    borderRightWidth: 10,
-    borderRightColor: 'transparent',
-    borderTopWidth: 10,
-    borderTopColor: '#fff',
-    marginTop: -1,
+    display: 'none',
   },
 });
 

@@ -46,6 +46,19 @@ interface RestauranteDetalhes {
     legenda?: string | null;
     atribuicao?: string | null;
   }>;
+  geoapify_extras?: {
+    descricao?: string;
+    cozinha?: string | string[];
+    reserva?: string | boolean;
+    capacidade?: string | number;
+    delivery?: string | boolean;
+    takeaway?: string | boolean;
+    outdoor_seating?: string | boolean;
+    wheelchair?: string | boolean;
+    estacionamento?: string | boolean;
+    playground?: string | boolean;
+    aceita_cartao?: string | boolean;
+  };
 }
 
 interface RestauranteFavorito {
@@ -240,6 +253,14 @@ export default function Restaurante() {
     });
   };
 
+  const valorDisponibilidade = (valor: unknown) => {
+    if (valor === true || valor === 'yes' || valor === 'true' || valor === '1') return 'Sim';
+    if (valor === false || valor === 'no' || valor === 'false' || valor === '0') return 'Nao';
+    if (Array.isArray(valor)) return valor.join(', ');
+    if (valor === undefined || valor === null || valor === '') return '';
+    return String(valor).replace(/_/g, ' ');
+  };
+
   const renderLotacao = (nivel: 'baixa' | 'media' | 'alta') => {
     const cores = { baixa: '#2E7D32', media: '#B7791F', alta: '#C62828' } as const;
     const icones = { baixa: 'check-circle', media: 'error', alta: 'warning' } as const;
@@ -269,6 +290,21 @@ export default function Restaurante() {
   const pessoasFila = lotacaoPercentual !== null ? calcularPessoasNaFila(lotacaoPercentual) : null;
   const statusLotacao = lotacaoPercentual !== null ? calcularStatusLotacao(lotacaoPercentual) : null;
   const horarios = traduzirDiasEHorarios(detalhes.horarios);
+  const extras = detalhes.geoapify_extras || {};
+  const comodidades = [
+    { icon: 'local-parking', label: 'Estacionamento', value: extras.estacionamento },
+    { icon: 'child-care', label: 'Playground', value: extras.playground },
+    { icon: 'accessible', label: 'Acessibilidade', value: extras.wheelchair },
+    { icon: 'deck', label: 'Area externa', value: extras.outdoor_seating },
+    { icon: 'delivery-dining', label: 'Delivery', value: extras.delivery },
+    { icon: 'shopping-bag', label: 'Retirada', value: extras.takeaway },
+    { icon: 'credit-card', label: 'Cartao', value: extras.aceita_cartao },
+    { icon: 'event-available', label: 'Reserva', value: extras.reserva },
+    { icon: 'groups', label: 'Capacidade', value: extras.capacidade },
+    { icon: 'restaurant-menu', label: 'Cozinha', value: extras.cozinha },
+  ]
+    .map((item) => ({ ...item, texto: valorDisponibilidade(item.value) }))
+    .filter((item) => item.texto);
 
   return (
     <>
@@ -372,6 +408,28 @@ export default function Restaurante() {
                 <Text style={styles.info}>{detalhes.avaliacao_externa.ranking}</Text>
               )}
               <Text style={styles.attributionText}>Dados exibidos via {detalhes.avaliacao_externa.fonte}.</Text>
+            </View>
+          )}
+
+          {comodidades.length > 0 && (
+            <View style={styles.panel}>
+              <Text style={styles.sectionTitle}>Comodidades</Text>
+              <View style={styles.amenitiesGrid}>
+                {comodidades.map((item) => (
+                  <View key={item.label} style={styles.amenityItem}>
+                    <MaterialIcons
+                      name={item.icon as React.ComponentProps<typeof MaterialIcons>['name']}
+                      size={18}
+                      color={BLUE_DARK}
+                    />
+                    <View style={styles.amenityTextArea}>
+                      <Text style={styles.amenityLabel}>{item.label}</Text>
+                      <Text style={styles.amenityValue}>{item.texto}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+              <Text style={styles.attributionText}>Algumas informacoes podem vir do Geoapify/OpenStreetMap.</Text>
             </View>
           )}
 
@@ -552,6 +610,23 @@ const styles = StyleSheet.create({
   linkButtonText: { color: BLUE_DARK, fontWeight: '800', fontSize: 14, flexShrink: 1 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
   info: { fontSize: 14, color: '#344054', lineHeight: 20 },
+  amenitiesGrid: {
+    gap: 8,
+  },
+  amenityItem: {
+    minHeight: 48,
+    borderRadius: 8,
+    backgroundColor: '#F8FCFF',
+    borderWidth: 1,
+    borderColor: '#E3F2FD',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  amenityTextArea: { flex: 1 },
+  amenityLabel: { color: '#667085', fontSize: 12, fontWeight: '700' },
+  amenityValue: { color: INK, fontSize: 13, fontWeight: '800', marginTop: 1 },
   hoursTitle: {
     marginTop: 16,
     marginBottom: 8,

@@ -32,6 +32,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '@/firebaseconfig';
+import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
 
 type Evento = {
   id: string;
@@ -47,6 +48,7 @@ type Evento = {
   criadorNome: string;
   status: string;
   respostas: Record<string, string>;
+  ocultoPara: string[];
 };
 
 type Mensagem = {
@@ -122,6 +124,7 @@ export default function EventoDetalhes() {
             dados.respostas && typeof dados.respostas === 'object'
               ? (dados.respostas as Record<string, string>)
               : {},
+          ocultoPara: Array.isArray(dados.ocultoPara) ? dados.ocultoPara : [],
         });
       },
       (error) => {
@@ -183,6 +186,18 @@ export default function EventoDetalhes() {
         participantes: resposta === 'aceito' ? arrayUnion(user.uid) : arrayRemove(user.uid),
         atualizadoEm: serverTimestamp(),
       });
+
+      if (evento.criadoPor !== user.uid) {
+        await criarNotificacaoUsuario(evento.criadoPor, {
+          tipo: 'evento',
+          titulo: resposta === 'aceito' ? 'Convite aceito' : 'Convite recusado',
+          mensagem: `${user.displayName || user.email || 'Alguem'} ${
+            resposta === 'aceito' ? 'aceitou' : 'recusou'
+          } o convite para ${evento.titulo}.`,
+          eventoId: evento.id,
+          remetenteUid: user.uid,
+        });
+      }
     } catch (error) {
       console.error('Erro ao responder convite:', error);
       Alert.alert('Erro', 'Nao foi possivel responder ao convite.');
@@ -207,13 +222,11 @@ export default function EventoDetalhes() {
 
       await Promise.all(
         destinoUids.map((uid) =>
-          addDoc(collection(db, 'usuarios', uid, 'notificacoes'), {
+          criarNotificacaoUsuario(uid, {
             tipo: 'mensagem_evento',
             titulo: 'Nova mensagem no evento',
             mensagem: `${user.displayName || user.email || 'Alguem'} comentou em ${evento.titulo}.`,
             eventoId: evento.id,
-            lida: false,
-            criadoEm: serverTimestamp(),
           }),
         ),
       );
@@ -274,13 +287,11 @@ export default function EventoDetalhes() {
 
             await Promise.all(
               destinoUids.map((uid) =>
-                addDoc(collection(db, 'usuarios', uid, 'notificacoes'), {
+                criarNotificacaoUsuario(uid, {
                   tipo: 'evento_cancelado',
                   titulo: 'Evento cancelado',
                   mensagem: `${evento.titulo} foi cancelado.`,
                   eventoId: evento.id,
-                  lida: false,
-                  criadoEm: serverTimestamp(),
                 }),
               ),
             );
@@ -308,6 +319,32 @@ export default function EventoDetalhes() {
           } catch (error) {
             console.error('Erro ao excluir evento:', error);
             Alert.alert('Erro', 'Nao foi possivel excluir o evento.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const removerDaMinhaLista = () => {
+    if (!evento || !user) return;
+
+    Alert.alert('Remover evento?', 'Ele sai apenas da sua lista. O evento continua para as outras pessoas.', [
+      { text: 'Voltar', style: 'cancel' },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await updateDoc(doc(db, 'eventos_sociais', evento.id), {
+              ocultoPara: arrayUnion(user.uid),
+              participantes: arrayRemove(user.uid),
+              [`respostas.${user.uid}`]: 'removido',
+              atualizadoEm: serverTimestamp(),
+            });
+            router.replace('/screens/social');
+          } catch (error) {
+            console.error('Erro ao remover evento:', error);
+            Alert.alert('Erro', 'Nao foi possivel remover este evento da sua lista.');
           }
         },
       },
@@ -398,6 +435,11 @@ export default function EventoDetalhes() {
               )}
             </View>
           )}
+
+          <TouchableOpacity style={styles.removeSelfButton} onPress={removerDaMinhaLista}>
+            <MaterialIcons name="visibility-off" size={18} color="#4B5563" />
+            <Text style={styles.removeSelfButtonText}>Remover da minha lista</Text>
+          </TouchableOpacity>
 
           <View style={styles.chatPanel}>
             <Text style={styles.sectionTitle}>Conversa</Text>
@@ -592,6 +634,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   dangerButtonText: { color: '#9F1239', fontWeight: '800' },
+  removeSelfButton: {
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginTop: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  removeSelfButtonText: { color: '#4B5563', fontWeight: '800' },
   chatPanel: {
     marginTop: 14,
     backgroundColor: '#FFFFFF',

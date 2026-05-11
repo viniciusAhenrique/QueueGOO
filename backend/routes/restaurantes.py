@@ -66,6 +66,7 @@ async def buscar_restaurantes(
     q:   str   = Query(..., description="Texto de busca"),
     lat: float = Query(None),
     lng: float = Query(None),
+    raio: int = Query(7000, description="Raio em metros para busca textual"),
     _    = Depends(verificar_token),
 ):
     """
@@ -75,7 +76,7 @@ async def buscar_restaurantes(
     Exemplo: GET /restaurantes/buscar?q=sushi&lat=-25.4&lng=-49.2
     """
     try:
-        return await google_service.buscar_por_texto(q, lat, lng)
+        return await google_service.buscar_por_texto(q, lat, lng, raio)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 

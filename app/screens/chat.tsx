@@ -29,6 +29,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '@/firebaseconfig';
+import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
 import { avatarFallback, chatIdEntre } from '@/src/services/socialServices';
 
 type Mensagem = {
@@ -182,14 +183,12 @@ export default function ChatDireto() {
         { merge: true },
       );
 
-      await addDoc(collection(db, 'usuarios', friendId, 'notificacoes'), {
+      await criarNotificacaoUsuario(friendId, {
         tipo: 'chat',
         titulo: 'Nova mensagem',
         mensagem: `${usuario.displayName || usuario.email || 'Alguem'} enviou uma mensagem.`,
         chatId,
         remetenteUid: usuario.uid,
-        lida: false,
-        criadoEm: serverTimestamp(),
       });
     } catch (error) {
       console.error('Erro ao enviar mensagem direta:', error);

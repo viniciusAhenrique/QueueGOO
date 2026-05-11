@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   query,
@@ -20,6 +21,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '@/firebaseconfig';
@@ -33,6 +35,7 @@ type Reserva = {
   numPessoas: number;
   status: string;
   placeId: string;
+  telefoneRestaurante: string;
 };
 
 const BLUE_DARK = '#0D47A1';
@@ -78,6 +81,7 @@ export default function Reservas() {
               numPessoas: Number(dados.numPessoas || 0),
               status: String(dados.status || 'solicitada_whatsapp'),
               placeId: String(dados.placeId || ''),
+              telefoneRestaurante: String(dados.telefoneRestaurante || ''),
             };
           }),
         );
@@ -101,21 +105,67 @@ export default function Reservas() {
     [reservas],
   );
 
+  const marcarReservaCancelada = async (reserva: Reserva) => {
+    await updateDoc(doc(db, 'reservas', reserva.id), {
+      status: 'cancelada',
+      atualizadoEm: serverTimestamp(),
+    });
+  };
+
+  const avisarRestaurante = async (reserva: Reserva) => {
+    const numero = reserva.telefoneRestaurante.replace(/\D/g, '');
+    if (!numero) {
+      Alert.alert('Telefone indisponivel', 'Este restaurante nao informou telefone para aviso.');
+      return;
+    }
+
+    const mensagem = `Ola, gostaria de cancelar minha reserva no restaurante ${reserva.restauranteNome} para ${reserva.numPessoas} pessoa(s), dia ${reserva.data} as ${reserva.hora}.`;
+    const numeroComPais = numero.startsWith('55') ? numero : `55${numero}`;
+    await Linking.openURL(`https://wa.me/${numeroComPais}?text=${encodeURIComponent(mensagem)}`);
+  };
+
   const cancelarReserva = (reserva: Reserva) => {
-    Alert.alert('Cancelar reserva?', 'A reserva sera marcada como cancelada no app.', [
+    Alert.alert('Cancelar reserva?', 'Voce pode apenas cancelar no app ou tambem avisar o restaurante pelo WhatsApp.', [
       { text: 'Voltar', style: 'cancel' },
       {
-        text: 'Cancelar',
+        text: 'So cancelar',
         style: 'destructive',
         onPress: async () => {
           try {
-            await updateDoc(doc(db, 'reservas', reserva.id), {
-              status: 'cancelada',
-              atualizadoEm: serverTimestamp(),
-            });
+            await marcarReservaCancelada(reserva);
           } catch (error) {
             console.error('Erro ao cancelar reserva:', error);
             Alert.alert('Erro', 'Nao foi possivel cancelar a reserva.');
+          }
+        },
+      },
+      {
+        text: 'Cancelar e avisar',
+        onPress: async () => {
+          try {
+            await marcarReservaCancelada(reserva);
+            await avisarRestaurante(reserva);
+          } catch (error) {
+            console.error('Erro ao cancelar e avisar reserva:', error);
+            Alert.alert('Erro', 'A reserva foi processada, mas nao foi possivel abrir o aviso.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const excluirReserva = (reserva: Reserva) => {
+    Alert.alert('Excluir reserva?', 'Este registro sera removido da sua lista.', [
+      { text: 'Voltar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, 'reservas', reserva.id));
+          } catch (error) {
+            console.error('Erro ao excluir reserva:', error);
+            Alert.alert('Erro', 'Nao foi possivel excluir a reserva.');
           }
         },
       },
@@ -185,12 +235,26 @@ export default function Reservas() {
                 <Info icon="group" label="Pessoas" value={String(item.numPessoas || '-')} />
               </View>
 
-              {item.status !== 'cancelada' && (
-                <TouchableOpacity style={styles.cancelButton} onPress={() => cancelarReserva(item)}>
-                  <MaterialIcons name="event-busy" size={18} color="#9F1239" />
-                  <Text style={styles.cancelButtonText}>Cancelar reserva</Text>
-                </TouchableOpacity>
-              )}
+              <View style={styles.actionRow}>
+                {item.status !== 'cancelada' ? (
+                  <TouchableOpacity style={styles.cancelButton} onPress={() => cancelarReserva(item)}>
+                    <MaterialIcons name="event-busy" size={18} color="#9F1239" />
+                    <Text style={styles.cancelButtonText}>Cancelar reserva</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.deleteButton} onPress={() => excluirReserva(item)}>
+                    <MaterialIcons name="delete-outline" size={18} color="#4B5563" />
+                    <Text style={styles.deleteButtonText}>Excluir registro</Text>
+                  </TouchableOpacity>
+                )}
+
+                {!!item.telefoneRestaurante && (
+                  <TouchableOpacity style={styles.whatsappButton} onPress={() => avisarRestaurante(item)}>
+                    <MaterialIcons name="chat" size={18} color={BLUE_DARK} />
+                    <Text style={styles.whatsappButtonText}>Avisar</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           )}
         />
@@ -284,17 +348,46 @@ const styles = StyleSheet.create({
   },
   infoLabel: { color: '#667085', fontSize: 11, marginTop: 4 },
   infoValue: { color: INK, fontSize: 13, fontWeight: '800', marginTop: 2 },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
   cancelButton: {
+    flex: 1,
     minHeight: 42,
     borderRadius: 8,
     backgroundColor: '#FFF1F2',
-    marginTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
   },
   cancelButtonText: { color: '#9F1239', fontWeight: '800' },
+  deleteButton: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  deleteButtonText: { color: '#4B5563', fontWeight: '800' },
+  whatsappButton: {
+    minWidth: 92,
+    minHeight: 42,
+    borderRadius: 8,
+    backgroundColor: '#E3F2FD',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  whatsappButtonText: { color: BLUE_DARK, fontWeight: '800' },
   emptyState: { alignItems: 'center', justifyContent: 'center', padding: 28, gap: 10 },
   emptyTitle: { color: INK, fontSize: 18, fontWeight: '800', textAlign: 'center' },
   emptyText: { color: '#667085', textAlign: 'center', lineHeight: 20 },

@@ -27,6 +27,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { db } from '@/firebaseconfig';
+import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
 import { avatarFallback, formatarDataCurta } from '@/src/services/socialServices';
 import { deletarImagemLocal } from '@/src/services/uploadServices';
 
@@ -124,14 +125,12 @@ export default function PostCard({ post, currentUser, onOpenAuthor }: PostCardPr
       });
 
       if (post.uid !== currentUser.uid) {
-        await addDoc(collection(db, 'usuarios', post.uid, 'notificacoes'), {
+        await criarNotificacaoUsuario(post.uid, {
           tipo: 'comentario_post',
           titulo: 'Novo comentario',
           mensagem: `${currentUser.displayName || currentUser.email || 'Alguem'} comentou na sua postagem.`,
           postId: post.id,
           remetenteUid: currentUser.uid,
-          lida: false,
-          criadoEm: serverTimestamp(),
         });
       }
     } catch (error) {

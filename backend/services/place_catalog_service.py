@@ -1,9 +1,14 @@
 import math
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
-from config import GEOAPIFY_ON_DEMAND_ENABLED, TRIPADVISOR_ENRICHMENT_ENABLED
+from config import (
+    GEOAPIFY_ON_DEMAND_ENABLED,
+    GEOAPIFY_REFRESH_LIMIT,
+    GEOAPIFY_REFRESH_MIN_RESULTS,
+    TRIPADVISOR_ENRICHMENT_ENABLED,
+)
 from database import get_supabase
 from services import geoapify_service, tripadvisor_service
 
@@ -28,6 +33,20 @@ TIPOS_COMIDA = (
     "food",
 )
 
+TIPOS_MERCADO = (
+    "mercado",
+    "mercados",
+    "supermercado",
+    "supermarket",
+    "grocery",
+    "grocery_or_supermarket",
+    "commercial.supermarket",
+    "commercial.food_and_drink",
+)
+
+GEOAPIFY_REFRESH_TTL = timedelta(minutes=30)
+_geoapify_refresh_cache: dict[tuple, datetime] = {}
+
 
 async def buscar_restaurantes_proximos(
     lat: float,
@@ -35,16 +54,32 @@ async def buscar_restaurantes_proximos(
     raio_metros: int = 1500,
     tipo_culinaria: str | None = None,
 ) -> list[dict]:
-    candidatos = _buscar_catalogo_por_caixa(lat, lng, raio_metros, tipo_culinaria)
-    if not candidatos:
-        candidatos = _buscar_cache_por_caixa(lat, lng, raio_metros, tipo_culinaria)
+    candidatos = _buscar_candidatos_proximos(lat, lng, raio_metros, tipo_culinaria)
+    resultados = _formatar_proximos(candidatos, lat, lng, raio_metros, tipo_culinaria)
 
-    if not candidatos and GEOAPIFY_ON_DEMAND_ENABLED:
-        await geoapify_service.buscar_e_salvar_proximos(
-            lat, lng, raio_metros, tipo_culinaria, limit=80
+    chave_refresh = _chave_refresh(lat, lng, raio_metros, tipo_culinaria or "proximos")
+    if _deve_atualizar_geoapify(len(resultados), chave_refresh):
+        await _atualizar_geoapify_proximos(
+            lat,
+            lng,
+            raio_metros,
+            tipo_culinaria,
+            limit=GEOAPIFY_REFRESH_LIMIT,
+            chave_refresh=chave_refresh,
         )
-        candidatos = _buscar_catalogo_por_caixa(lat, lng, raio_metros, tipo_culinaria)
+        candidatos = _buscar_candidatos_proximos(lat, lng, raio_metros, tipo_culinaria)
+        resultados = _formatar_proximos(candidatos, lat, lng, raio_metros, tipo_culinaria)
 
+    return sorted(resultados, key=lambda r: r.get("distancia_metros", 0))
+
+
+def _formatar_proximos(
+    candidatos: list[dict],
+    lat: float,
+    lng: float,
+    raio_metros: int,
+    tipo_culinaria: str | None,
+) -> list[dict]:
     resultados = []
     for item in candidatos:
         latitude = _float_ou_none(item.get("latitude"))
@@ -58,38 +93,41 @@ async def buscar_restaurantes_proximos(
             formatado["distancia_metros"] = round(distancia)
             resultados.append(formatado)
 
-    return sorted(resultados, key=lambda r: r.get("distancia_metros", 0))
+    return resultados
 
 
-async def buscar_por_texto(texto: str, lat: float | None = None, lng: float | None = None) -> list[dict]:
+async def buscar_por_texto(
+    texto: str,
+    lat: float | None = None,
+    lng: float | None = None,
+    raio_metros: int = 7000,
+) -> list[dict]:
     termo = _normalizar_texto(texto)
     if not termo:
         return []
 
-    resultados = _buscar_catalogo_por_texto(termo, lat, lng)
-    if not resultados:
-        resultados = _buscar_cache_por_texto(termo, lat, lng)
-
+    raio = max(1000, min(raio_metros, 50000))
+    resultados = _buscar_candidatos_por_texto(termo, lat, lng, raio)
     tokens = _tokens_busca(termo)
-    formatados = [
-        _formatar_restaurante(item)
-        for item in resultados
-        if _parece_comida(item) and _combina_busca(item, tokens)
-    ]
+    filtro_api = "mercado" if _filtro_mercado(termo) else None
+    formatados = _formatar_por_texto(resultados, tokens, filtro_api)
     if lat is None or lng is None:
         return formatados
 
-    filtrados_por_raio = []
-    for item in formatados:
-        latitude = _float_ou_none(item.get("latitude"))
-        longitude = _float_ou_none(item.get("longitude"))
-        if latitude is None or longitude is None:
-            continue
-
-        distancia = round(_distancia_metros(lat, lng, latitude, longitude))
-        if distancia <= 7000:
-            item["distancia_metros"] = distancia
-            filtrados_por_raio.append(item)
+    filtrados_por_raio = _filtrar_formatados_por_raio(formatados, lat, lng, raio)
+    chave_refresh = _chave_refresh(lat, lng, raio, termo)
+    if _deve_atualizar_geoapify(len(filtrados_por_raio), chave_refresh):
+        await _atualizar_geoapify_proximos(
+            lat,
+            lng,
+            raio,
+            filtro_api,
+            limit=GEOAPIFY_REFRESH_LIMIT,
+            chave_refresh=chave_refresh,
+        )
+        resultados = _buscar_candidatos_por_texto(termo, lat, lng, raio)
+        formatados = _formatar_por_texto(resultados, tokens, filtro_api)
+        filtrados_por_raio = _filtrar_formatados_por_raio(formatados, lat, lng, raio)
 
     return sorted(filtrados_por_raio, key=lambda r: r.get("distancia_metros") or 999_999_999)
 
@@ -100,6 +138,8 @@ async def buscar_detalhes(place_id: str) -> dict | None:
         return None
 
     detalhes = _formatar_detalhes(item)
+    await _enriquecer_com_geoapify(item, detalhes)
+
     if TRIPADVISOR_ENRICHMENT_ENABLED:
         try:
             enriquecimento = await tripadvisor_service.enriquecer_restaurante(item)
@@ -123,6 +163,225 @@ async def buscar_detalhes(place_id: str) -> dict | None:
     return detalhes
 
 
+def salvar_resultados_google(resultados: list[dict]) -> None:
+    rows = []
+    for item in resultados:
+        external_id = item.get("google_place_id")
+        if not external_id or not item.get("nome"):
+            continue
+
+        rows.append(
+            {
+                "provider": "google",
+                "external_id": external_id,
+                "nome": item.get("nome"),
+                "endereco": item.get("endereco"),
+                "latitude": item.get("latitude"),
+                "longitude": item.get("longitude"),
+                "categoria": _categoria_google(item.get("tipos") or []),
+                "tipos": item.get("tipos") or [],
+                "foto_url": item.get("foto_url"),
+                "horario_texto": item.get("horarios") or [],
+                "aberto_agora": item.get("aberto_agora"),
+                "nota": item.get("nota_google"),
+                "total_avaliacoes": item.get("total_avaliacoes_google"),
+                "telefone": item.get("telefone"),
+                "site_url": item.get("site_url"),
+                "maps_url": item.get("google_maps_url"),
+                "ativo": True,
+            }
+        )
+
+    if not rows:
+        return
+
+    try:
+        resposta = (
+            get_supabase()
+            .table("place_catalogo")
+            .upsert(rows, on_conflict="provider,external_id")
+            .execute()
+        )
+        total = len(resposta.data or rows)
+        exemplos = ", ".join(row.get("nome", "sem nome") for row in rows[:5])
+        print(f"[place_catalog] google salvou {total} restaurantes: {exemplos}")
+    except Exception as exc:
+        print(f"[place_catalog] upsert google ignorado: {exc}")
+
+
+async def _enriquecer_com_geoapify(item: dict, detalhes: dict) -> None:
+    if item.get("provider") != "geoapify" or not item.get("external_id"):
+        return
+
+    campos_faltantes = (
+        not detalhes.get("telefone")
+        or not detalhes.get("site_url")
+        or not detalhes.get("foto_url")
+        or not detalhes.get("horarios")
+    )
+    if not campos_faltantes:
+        return
+
+    try:
+        enriquecimento = await geoapify_service.buscar_detalhes(str(item.get("external_id")))
+    except Exception as exc:
+        print(f"[geoapify] detalhes ignorados: {exc}")
+        return
+
+    if not enriquecimento:
+        return
+
+    updates = {}
+    for campo in ("telefone", "site_url", "foto_url"):
+        if not detalhes.get(campo) and enriquecimento.get(campo):
+            detalhes[campo] = enriquecimento[campo]
+            updates[campo] = enriquecimento[campo]
+
+    horario_texto = enriquecimento.get("horario_texto") or []
+    if not detalhes.get("horarios") and horario_texto:
+        detalhes["horarios"] = horario_texto
+        updates["horario_texto"] = horario_texto
+
+    extras = enriquecimento.get("geoapify_extras") or {}
+    if extras:
+        detalhes["geoapify_extras"] = extras
+
+    if updates and item.get("id"):
+        try:
+            get_supabase().table("place_catalogo").update(updates).eq("id", item["id"]).execute()
+        except Exception as exc:
+            print(f"[geoapify] cache de detalhes ignorado: {exc}")
+
+
+def _buscar_candidatos_proximos(
+    lat: float,
+    lng: float,
+    raio_metros: int,
+    tipo_culinaria: str | None,
+) -> list[dict]:
+    return _deduplicar_itens(
+        [
+            *_buscar_catalogo_por_caixa(lat, lng, raio_metros, tipo_culinaria),
+            *_buscar_cache_por_caixa(lat, lng, raio_metros, tipo_culinaria),
+        ]
+    )
+
+
+async def _atualizar_geoapify_proximos(
+    lat: float,
+    lng: float,
+    raio_metros: int,
+    tipo_culinaria: str | None,
+    limit: int,
+    chave_refresh: tuple,
+) -> None:
+    try:
+        await geoapify_service.buscar_e_salvar_proximos(
+            lat,
+            lng,
+            raio_metros,
+            tipo_culinaria,
+            limit=limit,
+        )
+    except Exception as exc:
+        print(f"[geoapify] atualizacao sob demanda ignorada: {exc}")
+    finally:
+        _registrar_refresh_geoapify(chave_refresh)
+
+
+def _buscar_candidatos_por_texto(
+    texto: str,
+    lat: float | None,
+    lng: float | None,
+    raio_metros: int,
+) -> list[dict]:
+    return _deduplicar_itens(
+        [
+            *_buscar_catalogo_por_texto(texto, lat, lng, raio_metros),
+            *_buscar_cache_por_texto(texto, lat, lng, raio_metros),
+        ]
+    )
+
+
+def _formatar_por_texto(resultados: list[dict], tokens: list[str], filtro: str | None = None) -> list[dict]:
+    return [
+        _formatar_restaurante(item)
+        for item in resultados
+        if _parece_comida(item, filtro) and _combina_busca(item, tokens)
+    ]
+
+
+def _filtrar_formatados_por_raio(
+    formatados: list[dict],
+    lat: float,
+    lng: float,
+    raio_metros: int,
+) -> list[dict]:
+    filtrados_por_raio = []
+    for item in formatados:
+        latitude = _float_ou_none(item.get("latitude"))
+        longitude = _float_ou_none(item.get("longitude"))
+        if latitude is None or longitude is None:
+            continue
+
+        distancia = round(_distancia_metros(lat, lng, latitude, longitude))
+        if distancia <= raio_metros:
+            item["distancia_metros"] = distancia
+            filtrados_por_raio.append(item)
+
+    return filtrados_por_raio
+
+
+def _deve_atualizar_geoapify(total_resultados: int, chave_refresh: tuple) -> bool:
+    if not GEOAPIFY_ON_DEMAND_ENABLED or total_resultados >= GEOAPIFY_REFRESH_MIN_RESULTS:
+        return False
+
+    ultima = _geoapify_refresh_cache.get(chave_refresh)
+    return not ultima or datetime.now() - ultima > GEOAPIFY_REFRESH_TTL
+
+
+def _filtro_mercado(filtro: str | None) -> bool:
+    return _normalizar_texto(filtro) in TIPOS_MERCADO
+
+
+def _registrar_refresh_geoapify(chave_refresh: tuple) -> None:
+    _geoapify_refresh_cache[chave_refresh] = datetime.now()
+
+
+def _chave_refresh(lat: float, lng: float, raio_metros: int, filtro: str | None) -> tuple:
+    return (round(lat, 3), round(lng, 3), int(raio_metros), _normalizar_texto(filtro))
+
+
+def _deduplicar_itens(itens: list[dict]) -> list[dict]:
+    vistos = set()
+    unicos = []
+    for item in itens:
+        chave = (
+            item.get("external_id")
+            or item.get("google_place_id")
+            or _nested(item, "restaurante", "google_place_id")
+            or item.get("id")
+            or (
+                _normalizar_texto(str(item.get("nome") or "")),
+                round(_float_ou_none(item.get("latitude")) or 0, 5),
+                round(_float_ou_none(item.get("longitude")) or 0, 5),
+            )
+        )
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        unicos.append(item)
+    return unicos
+
+
+def _categoria_google(tipos: list[str]) -> str | None:
+    excluidos = {"restaurant", "food", "point_of_interest", "establishment"}
+    for tipo in tipos:
+        if tipo not in excluidos:
+            return tipo
+    return tipos[0] if tipos else None
+
+
 def _buscar_catalogo_por_caixa(
     lat: float,
     lng: float,
@@ -142,7 +401,7 @@ def _buscar_catalogo_por_caixa(
         .limit(120)
     )
 
-    if tipo_culinaria:
+    if tipo_culinaria and not _filtro_mercado(tipo_culinaria):
         query = query.ilike("busca_texto", f"%{tipo_culinaria}%")
 
     return _executar(query)
@@ -166,13 +425,18 @@ def _buscar_cache_por_caixa(
         .limit(120)
     )
 
-    if tipo_culinaria:
+    if tipo_culinaria and not _filtro_mercado(tipo_culinaria):
         query = query.ilike("categoria_culinaria", f"%{tipo_culinaria}%")
 
     return [item for item in _executar(query) if _nested(item, "restaurante", "ativo") is not False]
 
 
-def _buscar_catalogo_por_texto(texto: str, lat: float | None, lng: float | None) -> list[dict]:
+def _buscar_catalogo_por_texto(
+    texto: str,
+    lat: float | None,
+    lng: float | None,
+    raio_metros: int,
+) -> list[dict]:
     query = (
         get_supabase()
         .table("place_catalogo")
@@ -182,7 +446,7 @@ def _buscar_catalogo_por_texto(texto: str, lat: float | None, lng: float | None)
     )
 
     if lat is not None and lng is not None:
-        lat_min, lat_max, lng_min, lng_max = _bounding_box(lat, lng, 7000)
+        lat_min, lat_max, lng_min, lng_max = _bounding_box(lat, lng, raio_metros)
         query = (
             query.gte("latitude", lat_min)
             .lte("latitude", lat_max)
@@ -195,7 +459,12 @@ def _buscar_catalogo_por_texto(texto: str, lat: float | None, lng: float | None)
     return _executar(query)
 
 
-def _buscar_cache_por_texto(texto: str, lat: float | None, lng: float | None) -> list[dict]:
+def _buscar_cache_por_texto(
+    texto: str,
+    lat: float | None,
+    lng: float | None,
+    raio_metros: int,
+) -> list[dict]:
     query = (
         get_supabase()
         .table("restaurante_cache")
@@ -204,7 +473,7 @@ def _buscar_cache_por_texto(texto: str, lat: float | None, lng: float | None) ->
     )
 
     if lat is not None and lng is not None:
-        lat_min, lat_max, lng_min, lng_max = _bounding_box(lat, lng, 7000)
+        lat_min, lat_max, lng_min, lng_max = _bounding_box(lat, lng, raio_metros)
         query = (
             query.gte("latitude", lat_min)
             .lte("latitude", lat_max)
@@ -303,7 +572,14 @@ def _parece_comida(item: dict, filtro: str | None = None) -> bool:
         )
     )
 
-    if filtro and filtro.strip().lower() not in texto:
+    filtro_normalizado = _normalizar_texto(filtro)
+    if _filtro_mercado(filtro_normalizado):
+        return any(palavra in texto for palavra in TIPOS_MERCADO)
+
+    if any(palavra in texto for palavra in TIPOS_MERCADO):
+        return False
+
+    if filtro_normalizado and filtro_normalizado not in texto:
         return any(palavra in texto for palavra in TIPOS_COMIDA)
 
     return any(palavra in texto for palavra in TIPOS_COMIDA)
@@ -331,7 +607,16 @@ def _combina_busca(item: dict, tokens: list[str]) -> bool:
 
 
 def _tokens_busca(texto: str) -> list[str]:
-    ignorados = {"restaurante", "restaurantes", "restaurant", "comida", "food", "todos"}
+    ignorados = {
+        "restaurante",
+        "restaurantes",
+        "restaurant",
+        "comida",
+        "food",
+        "todos",
+        "mercado",
+        "mercados",
+    }
     return [token for token in texto.split() if len(token) > 2 and token not in ignorados]
 
 

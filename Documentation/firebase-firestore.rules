@@ -100,6 +100,31 @@ service cloud.firestore {
         );
     }
 
+    function onlySelfHiddenChanged() {
+      let oldHidden = resource.data.get('ocultoPara', []);
+      let newHidden = request.resource.data.get('ocultoPara', []);
+
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['ocultoPara', 'participantes', 'respostas', 'atualizadoEm'])
+        && onlyOwnResponseChanged()
+        && request.resource.data.respostas[request.auth.uid] == 'removido'
+        && request.auth.uid in newHidden
+        && newHidden.hasAll(oldHidden)
+        && (
+          request.auth.uid in oldHidden
+          || newHidden.size() == oldHidden.size() + 1
+        )
+        && (
+          request.resource.data.participantes == resource.data.participantes
+          || (
+            request.auth.uid in resource.data.participantes
+            && !(request.auth.uid in request.resource.data.participantes)
+            && resource.data.participantes.hasAll(request.resource.data.participantes)
+            && request.resource.data.participantes.size() == resource.data.participantes.size() - 1
+          )
+        );
+    }
+
     function onlyCommentsChanged() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['comentarios', 'atualizadoEm']);
@@ -196,6 +221,7 @@ service cloud.firestore {
         && (
           resource.data.criadoPor == request.auth.uid
           || selfAttendanceChanged()
+          || onlySelfHiddenChanged()
           || onlyCommentsChanged()
         );
       allow delete: if signedIn() && resource.data.criadoPor == request.auth.uid;

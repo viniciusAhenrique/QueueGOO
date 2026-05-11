@@ -1,8 +1,9 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { User } from 'firebase/auth';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,11 +16,17 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { db } from '@/firebaseconfig';
+import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
 import { avatarFallback } from '@/src/services/socialServices';
+import {
+  buscarRestaurantesPorTexto,
+  RestauranteResumo,
+} from '@/src/services/restauranteServices';
 import { extensaoDaImagem, uploadImagemLocal } from '@/src/services/uploadServices';
 
 type PostComposerModalProps = {
@@ -43,6 +50,9 @@ export default function PostComposerModal({
   onClose,
 }: PostComposerModalProps) {
   const [postando, setPostando] = useState(false);
+  const [localizacao, setLocalizacao] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [resultadosLocal, setResultadosLocal] = useState<RestauranteResumo[]>([]);
+  const [buscandoLocal, setBuscandoLocal] = useState(false);
   const [postForm, setPostForm] = useState({
     restaurante: '',
     legenda: '',
@@ -52,6 +62,52 @@ export default function PostComposerModal({
 
   const avatarUrl = authorPhoto || currentUser.photoURL || avatarFallback(currentUser.uid);
   const nome = authorName || currentUser.displayName || currentUser.email || 'Usuario';
+
+  useEffect(() => {
+    if (!visible) return;
+
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+
+      const lastKnown = await Location.getLastKnownPositionAsync({ maxAge: 120000 });
+      const location = lastKnown || (await Location.getCurrentPositionAsync({}));
+      setLocalizacao({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+    })().catch((error) => {
+      console.warn('Localizacao indisponivel para sugestao de post:', error);
+    });
+  }, [visible]);
+
+  useEffect(() => {
+    const termo = postForm.restaurante.trim();
+    if (!visible || termo.length < 2 || !localizacao) {
+      setResultadosLocal([]);
+      return undefined;
+    }
+
+    const timer = setTimeout(async () => {
+      setBuscandoLocal(true);
+      try {
+        const resultados = await buscarRestaurantesPorTexto(
+          termo,
+          localizacao.latitude,
+          localizacao.longitude,
+          7000,
+        );
+        setResultadosLocal(resultados.slice(0, 4));
+      } catch (error) {
+        console.warn('Erro ao buscar local para post:', error);
+        setResultadosLocal([]);
+      } finally {
+        setBuscandoLocal(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [localizacao, postForm.restaurante, visible]);
 
   const limpar = () => {
     setPostForm({ restaurante: '', legenda: '', imagemUri: '', mimeType: 'image/jpeg' });
@@ -117,13 +173,11 @@ export default function PostComposerModal({
 
       await Promise.all(
         notifyUids.map((uid) =>
-          addDoc(collection(db, 'usuarios', uid, 'notificacoes'), {
+          criarNotificacaoUsuario(uid, {
             tipo: 'post',
             titulo: 'Nova dica no feed',
             mensagem: `${nome} publicou uma dica.`,
             remetenteUid: currentUser.uid,
-            lida: false,
-            criadoEm: serverTimestamp(),
           }),
         ),
       );
@@ -136,6 +190,11 @@ export default function PostComposerModal({
     } finally {
       setPostando(false);
     }
+  };
+
+  const selecionarLocal = (restaurante: RestauranteResumo) => {
+    setPostForm((current) => ({ ...current, restaurante: restaurante.nome }));
+    setResultadosLocal([]);
   };
 
   return (
@@ -174,6 +233,26 @@ export default function PostComposerModal({
             placeholder="Restaurante ou mercado"
             placeholderTextColor="#667085"
           />
+          {buscandoLocal && <Text style={styles.helperText}>Buscando locais proximos...</Text>}
+          {resultadosLocal.length > 0 && (
+            <View style={styles.localResults}>
+              {resultadosLocal.map((restaurante) => (
+                <TouchableOpacity
+                  key={restaurante.google_place_id}
+                  style={styles.localResultItem}
+                  onPress={() => selecionarLocal(restaurante)}
+                >
+                  <MaterialIcons name="place" size={17} color={BLUE_DARK} />
+                  <View style={styles.localResultText}>
+                    <Text style={styles.localResultName} numberOfLines={1}>{restaurante.nome}</Text>
+                    <Text style={styles.localResultAddress} numberOfLines={1}>
+                      {restaurante.endereco || 'Local encontrado pelo QueueGOO'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <TextInput
             style={[styles.input, styles.textArea]}
             value={postForm.legenda}
@@ -259,6 +338,28 @@ const styles = StyleSheet.create({
     color: INK,
     marginBottom: 10,
   },
+  helperText: { color: '#4B6475', fontSize: 12, marginBottom: 8 },
+  localResults: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#FFFFFF',
+    marginTop: -6,
+    marginBottom: 10,
+    overflow: 'hidden',
+  },
+  localResultItem: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E3F2FD',
+  },
+  localResultText: { flex: 1 },
+  localResultName: { color: INK, fontFamily: 'Urbanist_700Bold', fontSize: 14 },
+  localResultAddress: { color: '#4B6475', fontSize: 12, marginTop: 2 },
   textArea: { minHeight: 96, paddingTop: 12, textAlignVertical: 'top' },
   secondaryButton: {
     minHeight: 46,

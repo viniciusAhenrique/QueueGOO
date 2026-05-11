@@ -1,6 +1,5 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import * as ExpoLinking from 'expo-linking';
-import * as Location from 'expo-location';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -40,6 +39,7 @@ import {
 } from 'firebase/firestore';
 
 import { auth, db } from '@/firebaseconfig';
+import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
 import {
   buscarRestaurantesPorTexto,
   RestauranteResumo,
@@ -79,6 +79,7 @@ type Evento = {
   link: string;
   status: string;
   respostas: Record<string, string>;
+  ocultoPara: string[];
 };
 
 type Notificacao = {
@@ -90,11 +91,6 @@ type Notificacao = {
 };
 
 type Aba = 'feed' | 'meus' | 'amigos';
-
-type Coordenadas = {
-  latitude: number;
-  longitude: number;
-};
 
 const EVENTOS_COLLECTION = 'eventos_sociais';
 const BLUE = '#4FC3F7';
@@ -158,7 +154,6 @@ export default function Social() {
   const [formAberto, setFormAberto] = useState(params.novoEvento === '1');
   const [comentariosDraft, setComentariosDraft] = useState<Record<string, string>>({});
   const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
-  const [localizacao, setLocalizacao] = useState<Coordenadas | null>(null);
   const [buscaLocal, setBuscaLocal] = useState(params.local || '');
   const [resultadosLocal, setResultadosLocal] = useState<RestauranteResumo[]>([]);
   const [buscandoLocal, setBuscandoLocal] = useState(false);
@@ -185,19 +180,6 @@ export default function Social() {
   }, []);
 
   useEffect(() => {
-    (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-
-      const location = await Location.getCurrentPositionAsync({});
-      setLocalizacao({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-    })();
-  }, []);
-
-  useEffect(() => {
     const termo = buscaLocal.trim();
     if (termo.length < 2 || termo === form.local) {
       setResultadosLocal([]);
@@ -208,11 +190,7 @@ export default function Social() {
     const timer = setTimeout(async () => {
       setBuscandoLocal(true);
       try {
-        const resultados = await buscarRestaurantesPorTexto(
-          termo,
-          localizacao?.latitude,
-          localizacao?.longitude,
-        );
+        const resultados = await buscarRestaurantesPorTexto(termo);
         setResultadosLocal(resultados.slice(0, 5));
       } catch (error) {
         console.error('Erro ao buscar restaurantes para evento:', error);
@@ -223,7 +201,7 @@ export default function Social() {
     }, 450);
 
     return () => clearTimeout(timer);
-  }, [buscaLocal, form.local, localizacao]);
+  }, [buscaLocal, form.local]);
 
   useEffect(() => {
     if (!user) {
@@ -258,10 +236,16 @@ export default function Social() {
               dados.respostas && typeof dados.respostas === 'object'
                 ? (dados.respostas as Record<string, string>)
                 : {},
+            ocultoPara: Array.isArray(dados.ocultoPara) ? dados.ocultoPara : [],
           };
         });
 
-        setEventos(lista.filter((evento) => evento.status !== 'cancelado').sort(ordenarEvento));
+        setEventos(
+          lista
+            .filter((evento) => evento.status !== 'cancelado')
+            .filter((evento) => !evento.ocultoPara.includes(user.uid))
+            .sort(ordenarEvento),
+        );
         setCarregando(false);
       },
       (error) => {
@@ -416,14 +400,12 @@ export default function Social() {
         atualizadoEm: serverTimestamp(),
       });
 
-      await addDoc(collection(db, 'usuarios', amigo.uid, 'notificacoes'), {
+      await criarNotificacaoUsuario(amigo.uid, {
         tipo: 'amizade',
         titulo: 'Pedido de amizade',
         mensagem: `${user.displayName || user.email || 'Alguem'} quer se conectar com voce.`,
         amizadeId: pedidoRef.id,
         remetenteUid: user.uid,
-        lida: false,
-        criadoEm: serverTimestamp(),
       });
 
       setNovoAmigoEmail('');
@@ -442,14 +424,12 @@ export default function Social() {
   ) => {
     await Promise.all(
       convidados.map((amigo) =>
-        addDoc(collection(db, 'usuarios', amigo.uid, 'notificacoes'), {
+        criarNotificacaoUsuario(amigo.uid, {
           tipo: 'evento',
           titulo: 'Novo convite',
           mensagem: `${user?.displayName || user?.email || 'Alguem'} chamou voce para ${titulo}.`,
           eventoId: eventId,
           link,
-          lida: false,
-          criadoEm: serverTimestamp(),
         }),
       ),
     );
@@ -488,11 +468,6 @@ export default function Social() {
       return;
     }
 
-    if (!form.placeId) {
-      Alert.alert('Selecione o restaurante', 'Use a busca e toque em um restaurante da lista.');
-      return;
-    }
-
     const emailsDigitados = normalizarEmails(form.convidados);
     const emailInvalido = emailsDigitados.find((email) => !isValidEmail(email));
     if (emailInvalido) {
@@ -523,6 +498,7 @@ export default function Social() {
         comentarios: [],
         respostas: { [user.uid]: 'aceito' },
         status: 'ativo',
+        ocultoPara: [],
         criadoEm: serverTimestamp(),
         atualizadoEm: serverTimestamp(),
       });
@@ -594,14 +570,12 @@ export default function Social() {
       });
 
       if (evento.criadoPor !== user.uid) {
-        await addDoc(collection(db, 'usuarios', evento.criadoPor, 'notificacoes'), {
+        await criarNotificacaoUsuario(evento.criadoPor, {
           tipo: 'comentario',
           titulo: 'Novo comentario',
           mensagem: `${comentario.nome} comentou em ${evento.titulo}.`,
           eventoId: evento.id,
           link: evento.link,
-          lida: false,
-          criadoEm: serverTimestamp(),
         });
       }
 
@@ -630,6 +604,18 @@ export default function Social() {
         participantes: resposta === 'aceito' ? arrayUnion(user.uid) : arrayRemove(user.uid),
         atualizadoEm: serverTimestamp(),
       });
+
+      if (evento.criadoPor !== user.uid) {
+        await criarNotificacaoUsuario(evento.criadoPor, {
+          tipo: 'evento',
+          titulo: resposta === 'aceito' ? 'Convite aceito' : 'Convite recusado',
+          mensagem: `${user.displayName || user.email || 'Alguem'} ${
+            resposta === 'aceito' ? 'aceitou' : 'recusou'
+          } o convite para ${evento.titulo}.`,
+          eventoId: evento.id,
+          remetenteUid: user.uid,
+        });
+      }
     } catch (error) {
       console.error('Erro ao responder convite:', error);
       Alert.alert('Erro', 'Nao foi possivel responder ao convite.');
@@ -645,6 +631,44 @@ export default function Social() {
       placeId: restaurante.google_place_id,
       titulo: current.titulo || `Encontro no ${restaurante.nome}`,
     }));
+  };
+
+  const usarLocalDigitado = () => {
+    const local = buscaLocal.trim();
+    if (!local) return;
+
+    setResultadosLocal([]);
+    setForm((current) => ({
+      ...current,
+      local,
+      placeId: '',
+      titulo: current.titulo || `Encontro no ${local}`,
+    }));
+  };
+
+  const removerDaMinhaLista = (evento: Evento) => {
+    if (!user) return;
+
+    Alert.alert('Remover evento?', 'Ele sai apenas da sua lista. O evento continua para as outras pessoas.', [
+      { text: 'Voltar', style: 'cancel' },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await updateDoc(doc(db, EVENTOS_COLLECTION, evento.id), {
+              ocultoPara: arrayUnion(user.uid),
+              participantes: arrayRemove(user.uid),
+              [`respostas.${user.uid}`]: 'removido',
+              atualizadoEm: serverTimestamp(),
+            });
+          } catch (error) {
+            console.error('Erro ao remover evento da lista:', error);
+            Alert.alert('Erro', 'Nao foi possivel remover este evento da sua lista.');
+          }
+        },
+      },
+    ]);
   };
 
   const atualizarDataEvento = (novaData: Date) => {
@@ -759,6 +783,14 @@ export default function Social() {
         >
           <MaterialIcons name="forum" size={18} color={BLUE_DARK} />
           <Text style={styles.detailsButtonText}>Detalhes e conversa</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.removeEventButton}
+          onPress={() => removerDaMinhaLista(evento)}
+        >
+          <MaterialIcons name="visibility-off" size={18} color="#4B5563" />
+          <Text style={styles.removeEventButtonText}>Remover da minha lista</Text>
         </TouchableOpacity>
 
         <View style={styles.comments}>
@@ -898,7 +930,9 @@ export default function Social() {
                 placeholder="Buscar restaurante ou mercado"
                   placeholderTextColor="#667085"
                 />
-                <Text style={styles.helperText}>Selecione um resultado da busca para vincular o evento.</Text>
+                <Text style={styles.helperText}>
+                  Busque qualquer restaurante ou use o local digitado.
+                </Text>
                 {buscandoLocal && <ActivityIndicator color={BLUE_DARK} style={styles.localLoader} />}
                 {resultadosLocal.length > 0 && (
                   <View style={styles.localResults}>
@@ -922,6 +956,12 @@ export default function Social() {
                       </TouchableOpacity>
                     ))}
                   </View>
+                )}
+                {!!buscaLocal.trim() && buscaLocal.trim() !== form.local && (
+                  <TouchableOpacity style={styles.useTypedLocalButton} onPress={usarLocalDigitado}>
+                    <MaterialIcons name="add-location-alt" size={18} color={BLUE_DARK} />
+                    <Text style={styles.useTypedLocalText}>Usar "{buscaLocal.trim()}" como local</Text>
+                  </TouchableOpacity>
                 )}
               </View>
               <View style={styles.formRow}>
@@ -1273,6 +1313,23 @@ const styles = StyleSheet.create({
     marginTop: -4,
     marginBottom: 8,
   },
+  useTypedLocalButton: {
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#F8FCFF',
+    marginBottom: 10,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  useTypedLocalText: {
+    color: BLUE_DARK,
+    fontFamily: 'Urbanist_700Bold',
+    flex: 1,
+  },
   inputHalf: { flex: 1 },
   textArea: { minHeight: 86, paddingTop: 12, textAlignVertical: 'top' },
   selectFriends: { marginBottom: 10 },
@@ -1395,6 +1452,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   detailsButtonText: { color: BLUE_DARK, fontFamily: 'Urbanist_700Bold' },
+  removeEventButton: {
+    minHeight: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#F9FAFB',
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  removeEventButtonText: { color: '#4B5563', fontFamily: 'Urbanist_700Bold' },
   peoplePill: {
     flexDirection: 'row',
     alignItems: 'center',

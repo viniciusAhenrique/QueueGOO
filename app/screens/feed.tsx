@@ -34,6 +34,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import PostCard, { PostItem } from '@/app/components/PostCard';
 import PostComposerModal from '@/app/components/PostComposerModal';
 import { auth, db } from '@/firebaseconfig';
+import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
 import { avatarFallback, formatarDataCurta } from '@/src/services/socialServices';
 import { isValidEmail, normalizeEmail } from '@/src/utils/validation';
 
@@ -236,14 +237,12 @@ export default function Feed() {
         atualizadoEm: serverTimestamp(),
       });
 
-      await addDoc(collection(db, 'usuarios', encontrado.id, 'notificacoes'), {
+      await criarNotificacaoUsuario(encontrado.id, {
         tipo: 'amizade',
         titulo: 'Pedido de amizade',
         mensagem: `${usuario.displayName || usuario.email || 'Alguem'} quer se conectar com voce.`,
         amizadeId: pedidoRef.id,
         remetenteUid: usuario.uid,
-        lida: false,
-        criadoEm: serverTimestamp(),
       });
 
       setNovoAmigoEmail('');
@@ -277,12 +276,10 @@ export default function Feed() {
           criadoEm: serverTimestamp(),
         });
 
-        await addDoc(collection(db, 'usuarios', pedido.fromUid, 'notificacoes'), {
+        await criarNotificacaoUsuario(pedido.fromUid, {
           tipo: 'amizade_aceita',
           titulo: 'Amizade aceita',
           mensagem: `${usuario.displayName || usuario.email || 'Alguem'} aceitou seu pedido.`,
-          lida: false,
-          criadoEm: serverTimestamp(),
         });
       }
 

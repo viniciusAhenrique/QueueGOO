@@ -1,18 +1,20 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { MaterialIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   Image,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Searchbar, Chip } from 'react-native-paper';
-import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
+import { Searchbar } from 'react-native-paper';
+
 import {
   buscarRestaurantesPorTexto,
   buscarRestaurantesProximos,
@@ -24,38 +26,59 @@ interface LocalizacaoCoords {
   longitude: number;
 }
 
+const BLUE_DARK = '#0D47A1';
+const INK = '#1e232c';
+
 const categorias = [
   { nome: 'Todos', valor: '' },
   { nome: 'Restaurantes', valor: 'restaurant' },
-  { nome: 'Mercados', valor: 'supermarket' },
+  { nome: 'Burger', valor: 'burger' },
+  { nome: 'Cafe', valor: 'cafe' },
+  { nome: 'Bar', valor: 'bar' },
+  { nome: 'Padaria', valor: 'bakery' },
   { nome: 'Japonesa', valor: 'japanese' },
   { nome: 'Brasileira', valor: 'brazilian' },
+  { nome: 'Italiana', valor: 'italian' },
+  { nome: 'Mexicana', valor: 'mexican' },
+  { nome: 'Vegetariana', valor: 'vegetarian' },
   { nome: 'Pizza', valor: 'pizza' },
+  { nome: 'Mercados', valor: 'supermarket' },
 ];
 
-const raios = [1000, 2000, 4000, 7000];
+const raios = [1000, 2000, 4000, 7000, 12000, 20000, 50000];
+
+function ehMercado(restaurante: RestauranteResumo) {
+  return restaurante.tipos?.some((tipo) =>
+    tipo.includes('supermarket') || tipo.includes('grocery') || tipo.includes('commercial.food'),
+  );
+}
+
+function ehRestaurante(restaurante: RestauranteResumo) {
+  return !ehMercado(restaurante);
+}
 
 export default function BuscarLayer() {
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoriaSelecionada, setCategoriaSelecionada] = useState('');
   const [resultados, setResultados] = useState<RestauranteResumo[]>([]);
   const [localizacao, setLocalizacao] = useState<LocalizacaoCoords | null>(null);
-  const [raioBusca, setRaioBusca] = useState<number>(2000);
-  const [avaliacaoMinima, setAvaliacaoMinima] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
+  const [raioBusca, setRaioBusca] = useState(2000);
+  const [avaliacaoMinima, setAvaliacaoMinima] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [buscaFeita, setBuscaFeita] = useState(false);
 
   const router = useRouter();
 
   useEffect(() => {
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({});
-        setLocalizacao({
-          latitude: loc.coords.latitude,
-          longitude: loc.coords.longitude,
-        });
-      }
+      if (status !== 'granted') return;
+
+      const loc = await Location.getCurrentPositionAsync({});
+      setLocalizacao({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
     })();
   }, []);
 
@@ -65,164 +88,177 @@ export default function BuscarLayer() {
     try {
       setLoading(true);
       const termoCategoria =
-        categoriaSelecionada === 'restaurant'
-          ? 'restaurante'
-          : categoriaSelecionada === 'supermarket'
-            ? 'mercado'
+        categoriaSelecionada === 'supermarket'
+          ? 'mercado'
+          : categoriaSelecionada === 'restaurant' || !categoriaSelecionada
+            ? ''
             : categoriaSelecionada;
       const termo = [termoCategoria, searchQuery].filter(Boolean).join(' ').trim();
       const data = termo
-        ? await buscarRestaurantesPorTexto(termo, localizacao.latitude, localizacao.longitude)
-        : await buscarRestaurantesProximos(
-            localizacao.latitude,
-            localizacao.longitude,
-            raioBusca,
-            categoriaSelecionada || undefined,
-          );
+        ? await buscarRestaurantesPorTexto(termo, localizacao.latitude, localizacao.longitude, raioBusca)
+        : await buscarRestaurantesProximos(localizacao.latitude, localizacao.longitude, raioBusca);
 
       const filtrado = data
         .filter((r) => r.aberto_agora !== false)
         .filter((r) => {
-          if (categoriaSelecionada === 'restaurant') {
-            return r.tipos?.includes('restaurant') || !r.tipos?.includes('supermarket');
-          }
-          if (categoriaSelecionada === 'supermarket') {
-            return r.tipos?.some((tipo) => tipo.includes('supermarket') || tipo.includes('grocery'));
-          }
-          return true;
+          if (categoriaSelecionada === 'supermarket') return ehMercado(r);
+          return ehRestaurante(r);
         })
         .filter((r) =>
           !avaliacaoMinima || (r.nota_google && r.nota_google >= parseFloat(avaliacaoMinima)),
         );
 
       setResultados(filtrado);
+      setBuscaFeita(true);
     } catch (e) {
       console.error('Erro na busca:', e);
+      setResultados([]);
+      setBuscaFeita(true);
     } finally {
       setLoading(false);
     }
-  }, [
-    avaliacaoMinima,
-    categoriaSelecionada,
-    localizacao,
-    raioBusca,
-    searchQuery,
-  ]);
+  }, [avaliacaoMinima, categoriaSelecionada, localizacao, raioBusca, searchQuery]);
+
+  const podeExpandirRaio = useMemo(() => raioBusca < raios[raios.length - 1], [raioBusca]);
+
+  const expandirRaio = () => {
+    const proximoRaio = raios.find((raio) => raio > raioBusca) || raios[raios.length - 1];
+    setRaioBusca(proximoRaio);
+  };
 
   useEffect(() => {
     buscarRestaurantes();
   }, [buscarRestaurantes]);
 
-  const renderItem = ({ item }: { item: RestauranteResumo }) => {
-    const imagem = item.foto_url || 'https://via.placeholder.com/400x200.png?text=Sem+Imagem';
-
-    return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() =>
-          router.push({
-            pathname: '/screens/restaurante',
-            params: { placeId: item.google_place_id },
-          })
-        }
-      >
-        <Image source={{ uri: imagem }} style={styles.cardImage} />
-        <View style={styles.cardContent}>
-          <Text style={styles.nome}>{item.nome}</Text>
-          <Text style={styles.tipo}>{item.endereco}</Text>
-          <View style={styles.cardFooter}>
-            <Text style={styles.estrelas}>Nota: {item.nota_google ?? 'N/A'}</Text>
-            <Text style={styles.openBadge}>
-              {item.aberto_agora === true ? 'Aberto agora' : 'Horario nao informado'}
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
   const verNoMapa = () => {
     const termoCategoria =
-      categoriaSelecionada === 'restaurant'
-        ? ''
-        : categoriaSelecionada === 'supermarket'
-          ? 'mercado'
+      categoriaSelecionada === 'supermarket'
+        ? 'mercado'
+        : categoriaSelecionada === 'restaurant'
+          ? ''
           : categoriaSelecionada;
     const termoBusca = [termoCategoria, searchQuery].filter(Boolean).join(' ').trim();
 
     router.push({
       pathname: '/screens/mapa',
       params: {
-        tipoCulinaria: termoBusca || categoriaSelecionada || undefined,
-        termoBusca: termoBusca || 'Filtro',
+        tipoCulinaria: termoBusca || undefined,
+        termoBusca: termoBusca || 'Restaurantes',
+        raio: String(raioBusca),
       },
     });
   };
 
+  const renderItem = ({ item }: { item: RestauranteResumo }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() =>
+        router.push({
+          pathname: '/screens/restaurante',
+          params: { placeId: item.google_place_id },
+        })
+      }
+    >
+      {item.foto_url ? (
+        <Image source={{ uri: item.foto_url }} style={styles.cardImage} />
+      ) : (
+        <View style={styles.cardImageFallback}>
+          <MaterialIcons name={ehMercado(item) ? 'storefront' : 'restaurant'} size={34} color={BLUE_DARK} />
+        </View>
+      )}
+      <View style={styles.cardContent}>
+        <Text style={styles.nome} numberOfLines={2}>{item.nome}</Text>
+        <Text style={styles.tipo} numberOfLines={2}>{item.endereco || 'Endereco nao informado'}</Text>
+        <View style={styles.cardFooter}>
+          <Text style={styles.distance}>
+            {item.distancia_metros ? `${(item.distancia_metros / 1000).toFixed(1)} km` : 'Perto de voce'}
+          </Text>
+          <Text style={styles.openBadge}>
+            {item.aberto_agora === true ? 'Aberto agora' : 'Horario nao informado'}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <View style={styles.container}>
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <MaterialIcons name="arrow-back" size={22} color="#1e232c" />
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.back()}>
+          <MaterialIcons name="arrow-back" size={22} color={INK} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Busca</Text>
-        <View style={styles.backButtonGhost} />
+        <View style={styles.headerText}>
+          <Text style={styles.headerTitle}>Busca</Text>
+          <Text style={styles.headerSubtitle}>Restaurantes por raio</Text>
+        </View>
+        <View style={styles.iconGhost} />
       </View>
 
-      <Searchbar
-        placeholder="Buscar restaurantes e mercados"
-        onChangeText={setSearchQuery}
-        value={searchQuery}
-        style={styles.searchbar}
-      />
+      <View style={styles.controls}>
+        <Searchbar
+          placeholder="Buscar restaurante, comida ou lugar"
+          onChangeText={setSearchQuery}
+          value={searchQuery}
+          style={styles.searchbar}
+          inputStyle={styles.searchInput}
+        />
 
-      <View style={styles.row}>
-        {categorias.map((cat) => (
-          <Chip
-            key={cat.valor}
-            selected={categoriaSelecionada === cat.valor}
-            onPress={() => setCategoriaSelecionada(categoriaSelecionada === cat.valor ? '' : cat.valor)}
-            style={styles.chip}
-            mode="outlined"
-          >
-            {cat.nome}
-          </Chip>
-        ))}
+        <Text style={styles.controlLabel}>Categoria</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+          {categorias.map((cat) => {
+            const ativo = categoriaSelecionada === cat.valor;
+            return (
+              <TouchableOpacity
+                key={cat.valor || 'todos'}
+                style={[styles.filterChip, ativo && styles.filterChipActive]}
+                onPress={() => setCategoriaSelecionada(ativo ? '' : cat.valor)}
+              >
+                <Text style={[styles.filterChipText, ativo && styles.filterChipTextActive]}>{cat.nome}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <Text style={styles.controlLabel}>Raio</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+          {raios.map((r) => {
+            const ativo = raioBusca === r;
+            return (
+              <TouchableOpacity
+                key={r}
+                style={[styles.radiusChip, ativo && styles.radiusChipActive]}
+                onPress={() => setRaioBusca(r)}
+              >
+                <Text style={[styles.radiusChipText, ativo && styles.radiusChipTextActive]}>{r / 1000} km</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <View style={styles.ratingRow}>
+          <MaterialIcons name="star" size={18} color="#FF8F00" />
+          <TextInput
+            placeholder="Nota minima"
+            keyboardType="numeric"
+            value={avaliacaoMinima}
+            onChangeText={setAvaliacaoMinima}
+            style={styles.input}
+            placeholderTextColor="#667085"
+          />
+        </View>
       </View>
 
-      <View style={styles.row}>
-        {raios.map((r) => (
-          <Chip
-            key={r}
-            selected={raioBusca === r}
-            onPress={() => setRaioBusca(r)}
-            style={styles.chip}
-            mode="outlined"
-          >
-            {r / 1000} km
-          </Chip>
-        ))}
-      </View>
-
-      <TextInput
-        placeholder="Avaliação mínima (1-5)"
-        keyboardType="numeric"
-        value={avaliacaoMinima}
-        onChangeText={setAvaliacaoMinima}
-        style={styles.input}
-        placeholderTextColor="#444"
-      />
-
-      {(categoriaSelecionada || searchQuery.trim()) && (
+      <View style={styles.resultBar}>
+        <Text style={styles.resultText}>
+          {loading ? 'Buscando...' : `${resultados.length} locais encontrados`}
+        </Text>
         <TouchableOpacity style={styles.mapFilterButton} onPress={verNoMapa}>
           <MaterialIcons name="map" size={18} color="#FFFFFF" />
-          <Text style={styles.mapFilterButtonText}>Ver filtro no mapa</Text>
+          <Text style={styles.mapFilterButtonText}>Mapa</Text>
         </TouchableOpacity>
-      )}
+      </View>
 
-      {loading && (
-        <ActivityIndicator size="large" color="#2196F3" style={{ marginTop: 10 }} />
-      )}
+      {loading && <ActivityIndicator size="large" color={BLUE_DARK} style={styles.loader} />}
 
       <FlatList
         data={resultados}
@@ -230,7 +266,20 @@ export default function BuscarLayer() {
         renderItem={renderItem}
         contentContainerStyle={styles.lista}
         ListEmptyComponent={
-          !loading ? <Text style={styles.empty}>Nenhum local aberto encontrado.</Text> : null
+          !loading && buscaFeita ? (
+            <View style={styles.emptyState}>
+              <MaterialIcons name="search-off" size={32} color={BLUE_DARK} />
+              <Text style={styles.emptyTitle}>Nenhum restaurante encontrado neste raio.</Text>
+              {podeExpandirRaio ? (
+                <TouchableOpacity style={styles.expandButton} onPress={expandirRaio}>
+                  <MaterialIcons name="travel-explore" size={18} color="#FFFFFF" />
+                  <Text style={styles.expandButtonText}>Buscar em um raio maior</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.empty}>Tente outra categoria ou termo de busca.</Text>
+              )}
+            </View>
+          ) : null
         }
       />
     </View>
@@ -238,11 +287,7 @@ export default function BuscarLayer() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#E3F2FD',
-    paddingTop: 18,
-  },
+  container: { flex: 1, backgroundColor: '#E3F2FD', paddingTop: 18 },
   topBar: {
     minHeight: 48,
     marginHorizontal: 12,
@@ -251,7 +296,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  backButton: {
+  iconButton: {
     width: 42,
     height: 42,
     borderRadius: 8,
@@ -261,90 +306,117 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backButtonGhost: {
-    width: 42,
-    height: 42,
-  },
-  headerTitle: {
-    color: '#1e232c',
-    fontSize: 22,
-    fontWeight: '800',
+  iconGhost: { width: 42, height: 42 },
+  headerText: { alignItems: 'center' },
+  headerTitle: { color: INK, fontSize: 22, fontWeight: '800' },
+  headerSubtitle: { color: '#4B6475', fontSize: 12, fontWeight: '700', marginTop: 1 },
+  controls: {
+    marginHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#FFFFFF',
+    padding: 10,
+    marginBottom: 10,
   },
   searchbar: {
-    marginHorizontal: 12,
-    marginBottom: 8,
-    borderRadius: 10,
-    backgroundColor: '#fff',
-  },
-  row: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: 12,
-    marginBottom: 8,
-  },
-  chip: {
-    margin: 4,
-  },
-  input: {
-    marginHorizontal: 12,
-    backgroundColor: '#fff',
-    padding: 10,
-    borderRadius: 8,
-    color: '#000',
-    fontSize: 14,
-    borderWidth: 1,
-    borderColor: '#ccc',
-  },
-  mapFilterButton: {
-    marginHorizontal: 12,
-    marginTop: 8,
     marginBottom: 10,
-    minHeight: 46,
     borderRadius: 8,
-    backgroundColor: '#0D47A1',
+    backgroundColor: '#F8FCFF',
+    elevation: 0,
+    borderWidth: 1,
+    borderColor: '#E3F2FD',
+  },
+  searchInput: { fontSize: 14 },
+  controlLabel: { color: '#344054', fontSize: 12, fontWeight: '800', marginBottom: 6 },
+  row: { flexDirection: 'row', marginBottom: 8, paddingRight: 8 },
+  filterChip: {
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    paddingHorizontal: 10,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  filterChipActive: { backgroundColor: BLUE_DARK, borderColor: BLUE_DARK },
+  filterChipText: { color: BLUE_DARK, fontSize: 12, fontWeight: '800' },
+  filterChipTextActive: { color: '#FFFFFF' },
+  radiusChip: {
+    minHeight: 32,
+    borderRadius: 8,
+    backgroundColor: '#E3F2FD',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    paddingHorizontal: 10,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radiusChipActive: { backgroundColor: '#111827', borderColor: '#111827' },
+  radiusChipText: { color: BLUE_DARK, fontSize: 12, fontWeight: '800' },
+  radiusChipTextActive: { color: '#FFFFFF' },
+  ratingRow: {
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E3F2FD',
+    backgroundColor: '#F8FCFF',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  input: { flex: 1, color: INK, fontSize: 14, paddingVertical: 8 },
+  resultBar: {
+    marginHorizontal: 12,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  resultText: { flex: 1, color: '#344054', fontWeight: '800' },
+  mapFilterButton: {
+    minWidth: 96,
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: BLUE_DARK,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
     gap: 8,
   },
-  mapFilterButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
+  mapFilterButtonText: { color: '#FFFFFF', fontWeight: '800' },
+  loader: { marginTop: 10 },
   card: {
     marginHorizontal: 12,
     marginBottom: 12,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    elevation: 2,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
     overflow: 'hidden',
   },
-  cardImage: {
+  cardImage: { width: '100%', height: 142 },
+  cardImageFallback: {
     width: '100%',
-    height: 180,
+    height: 142,
+    backgroundColor: '#E3F2FD',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  cardContent: {
-    padding: 10,
-  },
-  nome: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#0D47A1',
-  },
-  tipo: {
-    fontSize: 14,
-    color: '#555',
-  },
-  estrelas: {
-    fontSize: 14,
-    color: '#FF8F00',
-  },
+  cardContent: { padding: 12 },
+  nome: { fontSize: 17, fontWeight: '800', color: BLUE_DARK },
+  tipo: { fontSize: 13, color: '#555', marginTop: 4, lineHeight: 18 },
+  distance: { fontSize: 13, color: '#FF8F00', fontWeight: '800' },
   cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    marginTop: 8,
+    marginTop: 10,
   },
   openBadge: {
     color: '#2E7D32',
@@ -355,12 +427,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 12,
   },
-  lista: {
-    paddingBottom: 60,
+  lista: { paddingBottom: 60 },
+  empty: { textAlign: 'center', marginTop: 20, color: '#666' },
+  emptyState: { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 10 },
+  emptyTitle: { color: INK, fontSize: 16, fontWeight: '800', textAlign: 'center' },
+  expandButton: {
+    minHeight: 44,
+    borderRadius: 8,
+    backgroundColor: BLUE_DARK,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
-  empty: {
-    textAlign: 'center',
-    marginTop: 20,
-    color: '#666',
-  },
+  expandButtonText: { color: '#FFFFFF', fontWeight: '800' },
 });

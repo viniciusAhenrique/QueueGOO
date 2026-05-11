@@ -5,13 +5,21 @@ from datetime import datetime, timedelta, timezone
 from typing import Generator
 from sqlalchemy.orm import Session
 
-from config import GOOGLE_API_KEY, GOOGLE_PLACES_FALLBACK_ENABLED, POPULARTIMES_FALLBACK_ENABLED
+from config import (
+    GOOGLE_API_KEY,
+    GOOGLE_PLACES_FALLBACK_ENABLED,
+    GOOGLE_PLACES_REFRESH_MIN_RESULTS,
+    GOOGLE_PLACES_REFRESH_TTL_MINUTES,
+    POPULARTIMES_FALLBACK_ENABLED,
+)
 from models.restaurante import RestauranteCache
 from services import place_catalog_service
 
 
 PLACES_BASE_URL = "https://maps.googleapis.com/maps/api/place"
 CACHE_TTL_HORAS = 24  
+GOOGLE_REFRESH_TTL = timedelta(minutes=GOOGLE_PLACES_REFRESH_TTL_MINUTES)
+_google_refresh_cache: dict[tuple, datetime] = {}
 
 TIPOS_COMIDA_PERMITIDOS = {
     "restaurant",
@@ -21,6 +29,9 @@ TIPOS_COMIDA_PERMITIDOS = {
     "cafe",
     "bakery",
     "bar",
+}
+
+TIPOS_MERCADO_PERMITIDOS = {
     "supermarket",
     "grocery_or_supermarket",
     "convenience_store",
@@ -100,14 +111,28 @@ async def buscar_restaurantes_proximos(lat: float, lng: float, raio_metros: int 
     resultados_catalogo = await place_catalog_service.buscar_restaurantes_proximos(
         lat, lng, raio_metros, tipo_culinaria
     )
-    if resultados_catalogo or not GOOGLE_PLACES_FALLBACK_ENABLED:
+    if not _deve_chamar_google(len(resultados_catalogo), lat, lng, raio_metros, tipo_culinaria or "proximos"):
         return resultados_catalogo
 
-    return await _buscar_google_restaurantes_proximos(lat, lng, raio_metros, tipo_culinaria)
+    chave_refresh = _chave_refresh_google(lat, lng, raio_metros, tipo_culinaria or "proximos")
+    try:
+        resultados_google = await _buscar_google_restaurantes_proximos(lat, lng, raio_metros, tipo_culinaria)
+    except Exception as exc:
+        print(f"[google places] fallback proximos ignorado: {exc}")
+        _registrar_refresh_google(chave_refresh)
+        return resultados_catalogo
+
+    place_catalog_service.salvar_resultados_google(resultados_google)
+    _registrar_refresh_google(chave_refresh)
+
+    resultados_atualizados = await place_catalog_service.buscar_restaurantes_proximos(
+        lat, lng, raio_metros, tipo_culinaria
+    )
+    return resultados_atualizados or resultados_google
 
 
 async def _buscar_google_restaurantes_proximos(lat: float, lng: float, raio_metros: int = 1500, tipo_culinaria: str = None) -> list:
-    tipos_busca = ["restaurant"] if tipo_culinaria else ["restaurant", "supermarket"]
+    tipos_busca = ["supermarket"] if _filtro_mercado(tipo_culinaria) else ["restaurant"]
     resultados_por_place_id = {}
     keyword = _normalizar_keyword_comida(tipo_culinaria)
 
@@ -132,7 +157,7 @@ async def _buscar_google_restaurantes_proximos(lat: float, lng: float, raio_metr
 
             for resultado in data.get("results", []):
                 place_id = resultado.get("place_id")
-                if place_id and _eh_resultado_de_comida(resultado):
+                if place_id and _eh_resultado_de_comida(resultado, tipo_culinaria):
                     resultados_por_place_id[place_id] = resultado
 
     return [_formatar_resultado_nearby(r) for r in resultados_por_place_id.values()]
@@ -151,7 +176,7 @@ async def buscar_detalhes_por_place_id(place_id: str) -> dict | None:
     foto_ref = fotos[0].get("photo_reference") if fotos else None
     location = dados.get("geometry", {}).get("location", {})
 
-    return {
+    resultado = {
         "google_place_id": place_id,
         "nome": dados.get("name"),
         "endereco": dados.get("formatted_address"),
@@ -167,17 +192,34 @@ async def buscar_detalhes_por_place_id(place_id: str) -> dict | None:
         "nota_google": dados.get("rating"),
         "total_avaliacoes_google": dados.get("user_ratings_total"),
     }
+    place_catalog_service.salvar_resultados_google([resultado])
+    return resultado
 
 
-async def buscar_por_texto(texto: str, lat: float = None, lng: float = None) -> list:
-    resultados_catalogo = await place_catalog_service.buscar_por_texto(texto, lat, lng)
-    if resultados_catalogo or not GOOGLE_PLACES_FALLBACK_ENABLED:
+async def buscar_por_texto(texto: str, lat: float = None, lng: float = None, raio_metros: int = 7000) -> list:
+    resultados_catalogo = await place_catalog_service.buscar_por_texto(texto, lat, lng, raio_metros)
+    if lat is None or lng is None:
         return resultados_catalogo
 
-    return await _buscar_google_por_texto(texto, lat, lng)
+    if not _deve_chamar_google(len(resultados_catalogo), lat, lng, raio_metros, texto):
+        return resultados_catalogo
+
+    chave_refresh = _chave_refresh_google(lat, lng, raio_metros, texto)
+    try:
+        resultados_google = await _buscar_google_por_texto(texto, lat, lng, raio_metros)
+    except Exception as exc:
+        print(f"[google places] fallback texto ignorado: {exc}")
+        _registrar_refresh_google(chave_refresh)
+        return resultados_catalogo
+
+    place_catalog_service.salvar_resultados_google(resultados_google)
+    _registrar_refresh_google(chave_refresh)
+
+    resultados_atualizados = await place_catalog_service.buscar_por_texto(texto, lat, lng, raio_metros)
+    return resultados_atualizados or resultados_google
 
 
-async def _buscar_google_por_texto(texto: str, lat: float = None, lng: float = None) -> list:
+async def _buscar_google_por_texto(texto: str, lat: float = None, lng: float = None, raio_metros: int = 7000) -> list:
     termo = _normalizar_keyword_comida(texto)
     params = {
         "query": termo,
@@ -187,7 +229,10 @@ async def _buscar_google_por_texto(texto: str, lat: float = None, lng: float = N
 
     if lat and lng:
         params["location"] = f"{lat},{lng}"
-        params["radius"]   = 10000
+        params["radius"]   = min(max(raio_metros, 1000), 50000)
+
+    if _filtro_mercado(texto):
+        params["type"] = "supermarket"
 
     async with httpx.AsyncClient() as client:
         response = await client.get(f"{PLACES_BASE_URL}/textsearch/json", params=params)
@@ -197,7 +242,7 @@ async def _buscar_google_por_texto(texto: str, lat: float = None, lng: float = N
     if data.get("status") not in ("OK", "ZERO_RESULTS"):
         raise Exception(f"Google Places erro: {data.get('status')}")
 
-    resultados = [r for r in data.get("results", []) if _eh_resultado_de_comida(r)]
+    resultados = [r for r in data.get("results", []) if _eh_resultado_de_comida(r, texto)]
     return [_formatar_resultado_nearby(r) for r in resultados]
 
 
@@ -379,6 +424,36 @@ def _cache_para_dict(cache: RestauranteCache) -> dict:
     }
 
 
+def _deve_chamar_google(
+    total_resultados: int,
+    lat: float,
+    lng: float,
+    raio_metros: int,
+    filtro: str | None,
+) -> bool:
+    if not GOOGLE_PLACES_FALLBACK_ENABLED or not GOOGLE_API_KEY:
+        return False
+    if total_resultados >= GOOGLE_PLACES_REFRESH_MIN_RESULTS:
+        return False
+
+    chave = _chave_refresh_google(lat, lng, raio_metros, filtro)
+    ultima = _google_refresh_cache.get(chave)
+    return not ultima or datetime.now(timezone.utc) - ultima > GOOGLE_REFRESH_TTL
+
+
+def _registrar_refresh_google(chave: tuple) -> None:
+    _google_refresh_cache[chave] = datetime.now(timezone.utc)
+
+
+def _chave_refresh_google(lat: float, lng: float, raio_metros: int, filtro: str | None) -> tuple:
+    return (
+        round(lat, 3),
+        round(lng, 3),
+        int(raio_metros),
+        str(filtro or "").strip().lower(),
+    )
+
+
 def _formatar_resultado_nearby(resultado: dict) -> dict:
     """Formata resultado do Nearby Search para retornar ao app."""
     location = resultado.get("geometry", {}).get("location", {})
@@ -406,11 +481,19 @@ def _normalizar_keyword_comida(texto: str | None) -> str:
     return PALAVRAS_CULINARIA.get(termo, f"{termo} restaurante comida")
 
 
-def _eh_resultado_de_comida(resultado: dict) -> bool:
+def _eh_resultado_de_comida(resultado: dict, filtro: str | None = None) -> bool:
     tipos = set(resultado.get("types", []))
     nome = str(resultado.get("name", "")).lower()
 
     if tipos.intersection(TIPOS_BLOQUEADOS):
+        return False
+
+    if _filtro_mercado(filtro):
+        return bool(tipos.intersection(TIPOS_MERCADO_PERMITIDOS)) or any(
+            palavra in nome for palavra in ("mercado", "supermercado", "market")
+        )
+
+    if tipos.intersection(TIPOS_MERCADO_PERMITIDOS):
         return False
 
     if tipos.intersection(TIPOS_COMIDA_PERMITIDOS):
@@ -430,10 +513,13 @@ def _eh_resultado_de_comida(resultado: dict) -> bool:
         "cafeteria",
         "padaria",
         "bakery",
-        "mercado",
-        "supermercado",
     )
     return any(palavra in nome for palavra in palavras_comida)
+
+
+def _filtro_mercado(filtro: str | None) -> bool:
+    termo = str(filtro or "").strip().lower()
+    return termo in {"mercado", "mercados", "supermercado", "supermarket", "grocery"}
 
 
 def _montar_url_foto(photo_reference: str, largura: int = 800) -> str:
