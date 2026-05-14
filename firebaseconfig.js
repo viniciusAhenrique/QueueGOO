@@ -8,7 +8,6 @@ const firebaseConfig = {
   apiKey: "AIzaSyBZeQN1FRZMp-XalbJYAmCqJmeHqG9oU3k",
   authDomain: "queuegoo.firebaseapp.com",
   projectId: "queuegoo",
-  storageBucket: "queuegoo.firebasestorage.app",
   messagingSenderId: "38327156962",
   appId: "1:38327156962:web:190958a36856a3ca4cdebb",
   measurementId: "G-N7EJ26ZWRZ"

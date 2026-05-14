@@ -1,5 +1,6 @@
 -- Bucket publico para imagens proprias do QueueGOO.
--- O backend envia arquivos com service_role; o app apenas le URLs publicas.
+-- Este bucket substitui o Firebase Storage para fotos de perfil, posts e midias do app.
+-- O backend envia/remove arquivos com service_role; o app apenas le URLs publicas.
 
 insert into storage.buckets (
   id,

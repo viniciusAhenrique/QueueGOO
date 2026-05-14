@@ -2,17 +2,14 @@
 
 ## Firebase
 
-- Criar o bucket do Firebase Storage antes de publicar as regras:
-  - Abrir `https://console.firebase.google.com/project/queuegoo/storage`
-  - Clicar em `Get Started`
-  - Escolher o local do bucket com cuidado, pois a localizacao nao deve ser trocada depois
-  - Finalizar a criacao do bucket padrao `queuegoo.firebasestorage.app`
+- Firebase fica responsavel apenas por Auth/Firestore enquanto a migracao completa para Supabase nao termina.
+- Imagens de perfil e posts nao usam Firebase Storage. O upload oficial e feito no Supabase Storage pelo bucket `queuegoo-media`.
 
 - Fazer login e publicar regras atualizadas:
 
 ```bash
 npx firebase-tools login
-npx firebase-tools deploy --only firestore:rules,storage
+npx firebase-tools deploy --only firestore:rules
 ```
 
 - Conferir no Firebase Authentication se Email/Senha esta habilitado.
@@ -34,6 +31,7 @@ npx firebase-tools deploy --only firestore:rules,storage
   - `SUPABASE_URL`
   - `SUPABASE_KEY`
   - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SUPABASE_STORAGE_BUCKET=queuegoo-media`
   - `GOOGLE_API_KEY`
   - `FIREBASE_PROJECT_ID=queuegoo`
   - `FIREBASE_SERVICE_ACCOUNT_JSON`
