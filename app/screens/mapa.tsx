@@ -29,6 +29,7 @@ import {
   buscarRestaurantesPorTexto,
   buscarRestaurantesProximos,
 } from '@/src/services/restauranteServices';
+import { listarMetricasQmesa, QmesaMetrica } from '@/src/services/qmesaPublicApi';
 
 const { width } = Dimensions.get('window');
 const menuWidth = width * 0.7;
@@ -105,12 +106,24 @@ type Restaurante = {
   longitude: number;
   foto: string | null;
   lotacao: number | null;
+  origemQmesa?: boolean;
+  movimentoAtual?: string | null;
+  recomendacaoVisita?: string | null;
+  mesasLivres?: number | null;
+  capacidadeTotal?: number | null;
 };
 
 function itemEhMercado(item: { tipos?: string[] }) {
   return item.tipos?.some((tipo) =>
     tipo.includes('supermarket') || tipo.includes('grocery') || tipo.includes('commercial.food'),
   );
+}
+
+function textoNormalizado(texto: string) {
+  return texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
 }
 
 export default function MapaComTudo() {
@@ -362,6 +375,7 @@ export default function MapaComTudo() {
     try {
       const filtro = filtroMapaRef.current.trim();
       const raioAtual = raioMapaRef.current;
+      const restaurantesQmesa = await buscarRestaurantesQmesa(latitude, longitude, raioAtual, filtro);
       const dataInicial = filtro
         ? await buscarRestaurantesPorTexto(filtro, latitude, longitude, raioAtual)
         : await buscarRestaurantesProximos(latitude, longitude, raioAtual);
@@ -384,7 +398,7 @@ export default function MapaComTudo() {
         moverMapaPara(coordenadasDevTeste);
       }
 
-      const restaurantesFiltradosBase: Restaurante[] = data
+      const restaurantesExternos: Restaurante[] = data
         .filter((item) => item.google_place_id && item.latitude && item.longitude)
         .filter(estaAberto)
         .filter((item) => !item.nota_google || item.nota_google >= 3.5)
@@ -399,15 +413,13 @@ export default function MapaComTudo() {
           lotacao: null,
         }));
 
-      if (!auth.currentUser) {
-        setLugares(restaurantesFiltradosBase);
-        return;
-      }
+      const restaurantesFiltradosBase = [...restaurantesQmesa, ...restaurantesExternos];
 
       const restaurantesComLotacao = await Promise.all(
         restaurantesFiltradosBase.map(async (restaurante) => ({
           ...restaurante,
-          lotacao: await buscarLotacao(restaurante.id),
+          lotacao:
+            restaurante.lotacao !== null ? restaurante.lotacao : await buscarLotacao(restaurante.id),
         })),
       );
 
@@ -426,6 +438,54 @@ export default function MapaComTudo() {
     }
   };
 
+  const buscarRestaurantesQmesa = async (
+    latitude: number,
+    longitude: number,
+    raio: number,
+    filtro: string,
+  ): Promise<Restaurante[]> => {
+    try {
+      const metricas = await listarMetricasQmesa();
+      const termo = textoNormalizado(filtro);
+
+      return metricas
+        .filter((item): item is QmesaMetrica & { latitude: number; longitude: number } =>
+          typeof item.latitude === 'number' && typeof item.longitude === 'number',
+        )
+        .filter((item) => item.aberto_agora !== false)
+        .filter((item) => {
+          if (!termo || filtro === 'restaurante') return true;
+          return textoNormalizado(item.restaurante_nome || '').includes(termo);
+        })
+        .filter((item) =>
+          calcularDistanciaMetros(
+            { latitude, longitude },
+            { latitude: item.latitude, longitude: item.longitude },
+          ) <= raio,
+        )
+        .map((item) => ({
+          id: item.restaurante_id,
+          nome: item.restaurante_nome,
+          tipo: 'Restaurante parceiro Qmesa',
+          latitude: item.latitude,
+          longitude: item.longitude,
+          foto: null,
+          lotacao:
+            typeof item.percentual_ocupacao === 'number'
+              ? Math.round(item.percentual_ocupacao)
+              : null,
+          origemQmesa: true,
+          movimentoAtual: item.movimento_atual || null,
+          recomendacaoVisita: item.recomendacao_visita || null,
+          mesasLivres: item.mesas_livres ?? null,
+          capacidadeTotal: item.capacidade_total ?? null,
+        }));
+    } catch (error) {
+      console.warn('API Qmesa indisponivel, seguindo com busca padrao:', error);
+      return [];
+    }
+  };
+
   const buscarLotacao = async (placeId: string): Promise<number | null> => {
     try {
       const { lotacao } = await buscarLotacaoAtual(placeId);
@@ -437,7 +497,7 @@ export default function MapaComTudo() {
   };
 
   const atualizarLotacoes = async () => {
-    if (!auth.currentUser || lugares.length === 0) return;
+    if (lugares.length === 0) return;
 
     const lugaresAtualizados = await Promise.all(
       lugares.map(async (lugar) => ({
@@ -471,9 +531,15 @@ export default function MapaComTudo() {
           <Marker
             key={lugar.id}
             coordinate={{ latitude: lugar.latitude, longitude: lugar.longitude }}
-            pinColor={getPinColor(lugar.lotacao)}
+            pinColor={lugar.origemQmesa ? '#FF9500' : getPinColor(lugar.lotacao)}
             onPress={() => setLugarSelecionado(lugar)}
-          />
+          >
+            {lugar.origemQmesa ? (
+              <View style={styles.qmesaMarker}>
+                <MaterialIcons name="verified" size={18} color="#FFFFFF" />
+              </View>
+            ) : undefined}
+          </Marker>
         ))}
       </MapView>
 
@@ -486,6 +552,11 @@ export default function MapaComTudo() {
             exibirLotacao={Boolean(authUser)}
             placeId={lugarSelecionado.id}
             foto={lugarSelecionado.foto}
+            destaqueQmesa={lugarSelecionado.origemQmesa}
+            movimentoAtual={lugarSelecionado.movimentoAtual}
+            recomendacaoVisita={lugarSelecionado.recomendacaoVisita}
+            mesasLivres={lugarSelecionado.mesasLivres}
+            capacidadeTotal={lugarSelecionado.capacidadeTotal}
             onClose={() => setLugarSelecionado(null)}
           />
         </View>
@@ -702,6 +773,17 @@ const styles = StyleSheet.create({
     gap: 10,
     elevation: 4,
     zIndex: 10,
+  },
+  qmesaMarker: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FF9500',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
   },
   legendItem: {
     flexDirection: 'row',

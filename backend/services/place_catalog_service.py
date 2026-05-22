@@ -6,7 +6,6 @@ from typing import Any
 from config import (
     GEOAPIFY_ON_DEMAND_ENABLED,
     GEOAPIFY_REFRESH_LIMIT,
-    GEOAPIFY_REFRESH_MIN_RESULTS,
     TRIPADVISOR_ENRICHMENT_ENABLED,
 )
 from database import get_supabase
@@ -333,7 +332,7 @@ def _filtrar_formatados_por_raio(
 
 
 def _deve_atualizar_geoapify(total_resultados: int, chave_refresh: tuple) -> bool:
-    if not GEOAPIFY_ON_DEMAND_ENABLED or total_resultados >= GEOAPIFY_REFRESH_MIN_RESULTS:
+    if not GEOAPIFY_ON_DEMAND_ENABLED:
         return False
 
     ultima = _geoapify_refresh_cache.get(chave_refresh)

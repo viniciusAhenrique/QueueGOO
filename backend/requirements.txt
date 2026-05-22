@@ -1,6 +1,6 @@
 # ============================================================
 # QueueGOO - Backend Dependencies
-# Python 3.11+
+# Python 3.14 local / 3.11+ em producao
 # Instalar: pip install -r requirements.txt
 # ============================================================
 
@@ -10,8 +10,7 @@ uvicorn[standard]==0.29.0
 
 # --- Banco de Dados (Supabase/PostgreSQL) ---
 supabase==2.10.0
-sqlalchemy==2.0.30
-psycopg2-binary==2.9.9
+sqlalchemy==2.0.44
 alembic==1.13.1
 
 # --- Firebase ---
@@ -25,8 +24,8 @@ populartimes @ git+https://github.com/m-wrzr/populartimes.git
 python-dotenv==1.0.1
 
 # --- Validacao de Dados ---
-pydantic==2.7.1
-pydantic-settings==2.2.1
+pydantic==2.13.4
+pydantic-settings==2.14.1
 
 # --- Utilitarios ---
 python-multipart==0.0.9

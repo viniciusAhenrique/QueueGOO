@@ -1,4 +1,5 @@
 import { apiFetch } from '../hooks/useApi';
+import { consultarLotacaoQmesa } from './qmesaPublicApi';
 
 export interface RestauranteResumo {
   google_place_id: string;
@@ -29,11 +30,11 @@ export interface RestauranteDetalhesApi extends RestauranteResumo {
     url?: string | null;
     rating_image_url?: string | null;
   };
-  fotos_externas?: Array<{
+  fotos_externas?: {
     url: string;
     legenda?: string | null;
     atribuicao?: string | null;
-  }>;
+  }[];
   geoapify_extras?: {
     descricao?: string;
     cozinha?: string | string[];
@@ -95,5 +96,18 @@ export async function buscarDetalhesRestaurante(placeId: string) {
 }
 
 export async function buscarLotacaoAtual(placeId: string) {
+  try {
+    const lotacaoQmesa = await consultarLotacaoQmesa(placeId);
+
+    if (typeof lotacaoQmesa?.percentual_ocupacao === 'number') {
+      return {
+        place_id: placeId,
+        lotacao: Math.round(lotacaoQmesa.percentual_ocupacao),
+      };
+    }
+  } catch (error) {
+    console.warn('Lotacao Qmesa indisponivel, usando API interna:', error);
+  }
+
   return apiFetch<LotacaoAtual>(`/lotacao/${encodeURIComponent(placeId)}`);
 }

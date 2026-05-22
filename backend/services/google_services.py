@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from config import (
     GOOGLE_API_KEY,
     GOOGLE_PLACES_FALLBACK_ENABLED,
-    GOOGLE_PLACES_REFRESH_MIN_RESULTS,
     GOOGLE_PLACES_REFRESH_TTL_MINUTES,
     POPULARTIMES_FALLBACK_ENABLED,
 )
@@ -432,8 +431,6 @@ def _deve_chamar_google(
     filtro: str | None,
 ) -> bool:
     if not GOOGLE_PLACES_FALLBACK_ENABLED or not GOOGLE_API_KEY:
-        return False
-    if total_resultados >= GOOGLE_PLACES_REFRESH_MIN_RESULTS:
         return False
 
     chave = _chave_refresh_google(lat, lng, raio_metros, filtro)

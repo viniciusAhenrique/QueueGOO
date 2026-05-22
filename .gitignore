@@ -4,9 +4,13 @@
 expo-env.d.ts
 .expo/
 node_modules/
+.venv/
 .env
 backend/.env
 backend/.venv/
 backend/serviceAccountKey.json
+__pycache__/
+*.pyc
+.expo-start.*.log
 *.local
 # @end expo-cli

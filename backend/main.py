@@ -43,7 +43,7 @@ def inicializar_firebase():
         service_account_path = BASE_DIR / service_account_path
 
     if FIREBASE_SERVICE_ACCOUNT_JSON:
-        cred = credentials.Certificate(json.loads(FIREBASE_SERVICE_ACCOUNT_JSON))
+        cred = credentials.Certificate(_carregar_service_account_json(FIREBASE_SERVICE_ACCOUNT_JSON))
     elif service_account_path and service_account_path.exists():
         cred = credentials.Certificate(str(service_account_path))
     elif not EM_PRODUCAO and (BASE_DIR / "serviceAccountKey.json").exists():
@@ -55,6 +55,24 @@ def inicializar_firebase():
         )
 
     firebase_admin.initialize_app(cred)
+
+
+def _carregar_service_account_json(raw_json: str) -> dict:
+    service_account_json = raw_json.strip()
+    if (
+        len(service_account_json) >= 2
+        and service_account_json[0] == service_account_json[-1]
+        and service_account_json[0] in {"'", '"'}
+    ):
+        service_account_json = service_account_json[1:-1].strip()
+
+    try:
+        return json.loads(service_account_json)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "FIREBASE_SERVICE_ACCOUNT_JSON invalido. No Render, cole o JSON puro "
+            "sem aspas simples envolvendo todo o valor."
+        ) from exc
 
 
 inicializar_firebase()

@@ -20,7 +20,10 @@ import {
   removerFavorito,
   verificarFavorito,
 } from '@/src/services/favoritosService';
-import { buscarDetalhesRestaurante } from '@/src/services/restauranteServices';
+import {
+  buscarDetalhesRestaurante,
+  buscarLotacaoAtual,
+} from '@/src/services/restauranteServices';
 
 interface RestauranteDetalhes {
   nome: string;
@@ -41,11 +44,11 @@ interface RestauranteDetalhes {
     url?: string | null;
     rating_image_url?: string | null;
   };
-  fotos_externas?: Array<{
+  fotos_externas?: {
     url: string;
     legenda?: string | null;
     atribuicao?: string | null;
-  }>;
+  }[];
   geoapify_extras?: {
     descricao?: string;
     cozinha?: string | string[];
@@ -74,13 +77,38 @@ const BLUE_DARK = '#0D47A1';
 const INK = '#1e232c';
 
 export default function Restaurante() {
-  const { placeId, lotacao } = useLocalSearchParams<{ placeId: string; lotacao?: string }>();
+  const {
+    placeId,
+    lotacao,
+    origemQmesa,
+    nome,
+    tipo,
+    movimentoAtual,
+    recomendacaoVisita,
+    mesasLivres,
+    capacidadeTotal,
+  } = useLocalSearchParams<{
+    placeId: string;
+    lotacao?: string;
+    origemQmesa?: string;
+    nome?: string;
+    tipo?: string;
+    movimentoAtual?: string;
+    recomendacaoVisita?: string;
+    mesasLivres?: string;
+    capacidadeTotal?: string;
+  }>();
   const router = useRouter();
   const lotacaoRecebida = lotacao !== undefined ? Number(lotacao) : null;
   const temLotacao = typeof lotacaoRecebida === 'number' && Number.isFinite(lotacaoRecebida);
-  const lotacaoPercentual = temLotacao ? lotacaoRecebida : null;
+  const restauranteQmesa = origemQmesa === '1';
+  const mesasLivresQmesa = Number(mesasLivres);
+  const capacidadeQmesa = Number(capacidadeTotal);
 
   const [detalhes, setDetalhes] = useState<RestauranteDetalhes | null>(null);
+  const [lotacaoPercentual, setLotacaoPercentual] = useState<number | null>(
+    temLotacao ? lotacaoRecebida : null,
+  );
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [favoritado, setFavoritado] = useState(false);
@@ -89,6 +117,18 @@ export default function Restaurante() {
 
   const buscarDetalhesDoLugar = useCallback(async () => {
     if (!placeId) {
+      setLoading(false);
+      return;
+    }
+
+    if (restauranteQmesa) {
+      setDetalhes({
+        nome: nome || 'Restaurante Qmesa',
+        tipos: [tipo || 'Restaurante parceiro Qmesa'],
+        geoapify_extras: {
+          capacidade: Number.isFinite(capacidadeQmesa) ? capacidadeQmesa : undefined,
+        },
+      });
       setLoading(false);
       return;
     }
@@ -106,11 +146,25 @@ export default function Restaurante() {
     } finally {
       setLoading(false);
     }
-  }, [placeId]);
+  }, [capacidadeQmesa, nome, placeId, restauranteQmesa, tipo]);
 
   useEffect(() => {
     buscarDetalhesDoLugar();
   }, [buscarDetalhesDoLugar]);
+
+  useEffect(() => {
+    if (!placeId || lotacaoPercentual !== null) return;
+
+    buscarLotacaoAtual(placeId)
+      .then(({ lotacao: lotacaoAtual }) => {
+        if (typeof lotacaoAtual === 'number') {
+          setLotacaoPercentual(lotacaoAtual);
+        }
+      })
+      .catch((error) => {
+        console.warn('Lotacao indisponivel para restaurante:', placeId, error);
+      });
+  }, [lotacaoPercentual, placeId]);
 
   useEffect(() => {
     const checarFavorito = async () => {
@@ -343,8 +397,30 @@ export default function Restaurante() {
 
           <View style={styles.addressRow}>
             <MaterialIcons name="place" size={18} color={BLUE_DARK} />
-            <Text style={styles.address}>{detalhes.endereco || 'Endereco nao informado'}</Text>
+            <Text style={styles.address}>
+              {restauranteQmesa
+                ? 'Dados operacionais ao vivo via Qmesa'
+                : detalhes.endereco || 'Endereco nao informado'}
+            </Text>
           </View>
+
+          {restauranteQmesa && (
+            <View style={styles.qmesaPanel}>
+              <View style={styles.qmesaBadgeLarge}>
+                <MaterialIcons name="verified" size={17} color="#FFFFFF" />
+                <Text style={styles.qmesaBadgeLargeText}>Parceiro Qmesa</Text>
+              </View>
+              {movimentoAtual ? (
+                <Text style={styles.qmesaText}>Movimento agora: {movimentoAtual}</Text>
+              ) : null}
+              {Number.isFinite(mesasLivresQmesa) ? (
+                <Text style={styles.qmesaText}>Mesas livres agora: {mesasLivresQmesa}</Text>
+              ) : null}
+              {recomendacaoVisita ? (
+                <Text style={styles.qmesaHint}>{recomendacaoVisita}</Text>
+              ) : null}
+            </View>
+          )}
 
           {lotacaoPercentual !== null && statusLotacao ? (
             <View style={styles.panel}>
@@ -642,4 +718,26 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontWeight: '700',
   },
+  qmesaPanel: {
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: '#FFD18A',
+  },
+  qmesaBadgeLarge: {
+    alignSelf: 'flex-start',
+    minHeight: 32,
+    borderRadius: 8,
+    backgroundColor: '#FF9500',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  qmesaBadgeLargeText: { color: '#FFFFFF', fontWeight: '900', fontSize: 13 },
+  qmesaText: { color: '#7A3E00', fontSize: 14, fontWeight: '800', marginTop: 2 },
+  qmesaHint: { color: '#7A3E00', fontSize: 14, lineHeight: 20, marginTop: 6 },
 });

@@ -960,7 +960,9 @@ export default function Social() {
                 {!!buscaLocal.trim() && buscaLocal.trim() !== form.local && (
                   <TouchableOpacity style={styles.useTypedLocalButton} onPress={usarLocalDigitado}>
                     <MaterialIcons name="add-location-alt" size={18} color={BLUE_DARK} />
-                    <Text style={styles.useTypedLocalText}>Usar "{buscaLocal.trim()}" como local</Text>
+                    <Text style={styles.useTypedLocalText}>
+                      Usar {buscaLocal.trim()} como local
+                    </Text>
                   </TouchableOpacity>
                 )}
               </View>

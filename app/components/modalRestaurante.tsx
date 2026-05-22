@@ -10,6 +10,11 @@ interface BalaoRestauranteProps {
   exibirLotacao?: boolean;
   placeId: string;
   foto: string | null;
+  destaqueQmesa?: boolean;
+  movimentoAtual?: string | null;
+  recomendacaoVisita?: string | null;
+  mesasLivres?: number | null;
+  capacidadeTotal?: number | null;
   onClose: () => void;
 }
 
@@ -20,6 +25,11 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
   exibirLotacao = true,
   placeId,
   foto,
+  destaqueQmesa = false,
+  movimentoAtual,
+  recomendacaoVisita,
+  mesasLivres,
+  capacidadeTotal,
   onClose,
 }) => {
   const router = useRouter();
@@ -57,6 +67,13 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
         )}
 
         <View style={styles.conteudo}>
+          {destaqueQmesa && (
+            <View style={styles.qmesaBadge}>
+              <MaterialIcons name="verified" size={15} color="#FFFFFF" />
+              <Text style={styles.qmesaBadgeText}>Parceiro Qmesa ao vivo</Text>
+            </View>
+          )}
+
           <Text style={styles.titulo} numberOfLines={1} ellipsizeMode="tail">
             {nome}
           </Text>
@@ -77,6 +94,20 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
             </>
           )}
 
+          {destaqueQmesa && (
+            <View style={styles.qmesaPanel}>
+              {movimentoAtual ? (
+                <Text style={styles.qmesaInfo}>Movimento agora: {movimentoAtual}</Text>
+              ) : null}
+              {typeof mesasLivres === 'number' ? (
+                <Text style={styles.qmesaInfo}>Mesas livres: {mesasLivres}</Text>
+              ) : null}
+              {recomendacaoVisita ? (
+                <Text style={styles.qmesaHint}>{recomendacaoVisita}</Text>
+              ) : null}
+            </View>
+          )}
+
           {exibirLotacao && lotacao === null && (
             <Text style={styles.infoFila}>Lotacao indisponivel no momento.</Text>
           )}
@@ -90,6 +121,19 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
                 params: {
                   placeId,
                   ...(lotacao !== null ? { lotacao: lotacao.toString() } : {}),
+                  ...(destaqueQmesa
+                    ? {
+                        origemQmesa: '1',
+                        nome,
+                        tipo,
+                        movimentoAtual: movimentoAtual || '',
+                        recomendacaoVisita: recomendacaoVisita || '',
+                        mesasLivres:
+                          typeof mesasLivres === 'number' ? String(mesasLivres) : '',
+                        capacidadeTotal:
+                          typeof capacidadeTotal === 'number' ? String(capacidadeTotal) : '',
+                      }
+                    : {}),
                 },
               });
             }}
@@ -153,6 +197,22 @@ const styles = StyleSheet.create({
   conteudo: {
     padding: 12,
   },
+  qmesaBadge: {
+    alignSelf: 'flex-start',
+    minHeight: 28,
+    borderRadius: 8,
+    backgroundColor: '#FF9500',
+    paddingHorizontal: 9,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  qmesaBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   titulo: {
     fontSize: 18,
     fontWeight: '700',
@@ -178,6 +238,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#444',
     marginBottom: 12,
+  },
+  qmesaPanel: {
+    borderRadius: 8,
+    backgroundColor: '#FFF7E8',
+    borderWidth: 1,
+    borderColor: '#FFD18A',
+    padding: 10,
+    marginBottom: 12,
+    gap: 3,
+  },
+  qmesaInfo: {
+    color: '#7A3E00',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  qmesaHint: {
+    color: '#7A3E00',
+    fontSize: 13,
+    lineHeight: 18,
   },
   destaque: {
     fontWeight: 'bold',
