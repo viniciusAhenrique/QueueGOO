@@ -15,20 +15,24 @@ function readLocalEnv(name) {
   return line?.split('=').slice(1).join('=').trim();
 }
 
-module.exports = () => {
+module.exports = ({ config }) => {
   const googleMapsApiKey = process.env.GOOGLE_API_KEY || readLocalEnv('GOOGLE_API_KEY');
+  const baseConfig = {
+    ...appJson.expo,
+    ...config,
+  };
 
   return {
-    ...appJson.expo,
+    ...baseConfig,
     android: {
-      ...appJson.expo.android,
+      ...baseConfig.android,
       config: {
-        ...appJson.expo.android?.config,
+        ...baseConfig.android?.config,
         googleMaps: googleMapsApiKey
           ? {
               apiKey: googleMapsApiKey,
             }
-          : appJson.expo.android?.config?.googleMaps,
+          : baseConfig.android?.config?.googleMaps,
       },
     },
   };
