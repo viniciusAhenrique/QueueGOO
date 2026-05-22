@@ -1,0 +1,17 @@
+backend/.env
+.env
+.venv/
+backend/.venv/
+node_modules/
+.expo/
+.expo-home/
+.expo-start.*.log
+eas-build-failed*.log
+eas-build-failed*.txt
+eas-inspect/
+__pycache__/
+*.pyc
+*.pyo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

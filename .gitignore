@@ -12,5 +12,8 @@ backend/serviceAccountKey.json
 __pycache__/
 *.pyc
 .expo-start.*.log
+eas-build-failed*.log
+eas-build-failed*.txt
+eas-inspect/
 *.local
 # @end expo-cli
