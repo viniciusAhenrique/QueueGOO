@@ -12,6 +12,7 @@ eas-inspect/
 __pycache__/
 *.pyc
 *.pyo
+*.apk
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

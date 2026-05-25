@@ -11,6 +11,8 @@ backend/.venv/
 backend/serviceAccountKey.json
 __pycache__/
 *.pyc
+.apk
+*.apk
 .expo-start.*.log
 eas-build-failed*.log
 eas-build-failed*.txt
