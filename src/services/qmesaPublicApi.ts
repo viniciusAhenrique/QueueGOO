@@ -73,7 +73,10 @@ async function qmesaFetch<T>(view: string, params: Record<string, SupabaseFilter
     searchParams.set(key, String(value));
   }
 
-  const response = await fetch(`${QMESA_REST_URL}/${view}?${searchParams.toString()}`, {
+  const url = `${QMESA_REST_URL}/${view}?${searchParams.toString()}`;
+  console.info(`[Qmesa API] Consultando ${view}:`, url);
+
+  const response = await fetch(url, {
     headers: {
       apikey: QMESA_ANON_KEY,
       Authorization: `Bearer ${QMESA_ANON_KEY}`,
@@ -82,10 +85,21 @@ async function qmesaFetch<T>(view: string, params: Record<string, SupabaseFilter
   });
 
   if (!response.ok) {
+    const erro = await response.text();
+    console.warn(`[Qmesa API] Erro em ${view}:`, {
+      status: response.status,
+      body: erro,
+    });
     throw new Error(`Erro HTTP ${response.status} ao consultar ${view}.`);
   }
 
-  return response.json() as Promise<T>;
+  const dados = (await response.json()) as T;
+  console.info(`[Qmesa API] Resposta de ${view}:`, {
+    total: Array.isArray(dados) ? dados.length : null,
+    dados,
+  });
+
+  return dados;
 }
 
 export function listarRestaurantesQmesa() {
@@ -97,6 +111,13 @@ export function listarRestaurantesQmesa() {
 
 export function listarMetricasQmesa() {
   return qmesaFetch<QmesaMetrica[]>('api_v_metricas', {
+    select: '*',
+    order: 'restaurante_nome.asc',
+  });
+}
+
+export function listarLotacoesQmesa() {
+  return qmesaFetch<QmesaLotacao[]>('api_v_lotacao', {
     select: '*',
     order: 'restaurante_nome.asc',
   });

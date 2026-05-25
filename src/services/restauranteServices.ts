@@ -12,6 +12,12 @@ export interface RestauranteResumo {
   aberto_agora?: boolean;
   tipos?: string[];
   distancia_metros?: number;
+  origem_qmesa?: boolean;
+  movimento_atual?: string | null;
+  recomendacao_visita?: string | null;
+  mesas_livres?: number | null;
+  capacidade_total?: number | null;
+  percentual_ocupacao?: number | null;
 }
 
 export interface RestauranteDetalhesApi extends RestauranteResumo {
@@ -55,6 +61,10 @@ export interface LotacaoAtual {
   lotacao: number | null;
 }
 
+function pareceUuid(valor: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(valor);
+}
+
 export async function buscarRestaurantesProximos(
   latitude: number,
   longitude: number,
@@ -96,17 +106,19 @@ export async function buscarDetalhesRestaurante(placeId: string) {
 }
 
 export async function buscarLotacaoAtual(placeId: string) {
-  try {
-    const lotacaoQmesa = await consultarLotacaoQmesa(placeId);
+  if (pareceUuid(placeId)) {
+    try {
+      const lotacaoQmesa = await consultarLotacaoQmesa(placeId);
 
-    if (typeof lotacaoQmesa?.percentual_ocupacao === 'number') {
-      return {
-        place_id: placeId,
-        lotacao: Math.round(lotacaoQmesa.percentual_ocupacao),
-      };
+      if (typeof lotacaoQmesa?.percentual_ocupacao === 'number') {
+        return {
+          place_id: placeId,
+          lotacao: Math.round(lotacaoQmesa.percentual_ocupacao),
+        };
+      }
+    } catch (error) {
+      console.warn('Lotacao Qmesa indisponivel, usando API interna:', error);
     }
-  } catch (error) {
-    console.warn('Lotacao Qmesa indisponivel, usando API interna:', error);
   }
 
   return apiFetch<LotacaoAtual>(`/lotacao/${encodeURIComponent(placeId)}`);

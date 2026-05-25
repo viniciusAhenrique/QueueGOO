@@ -29,7 +29,7 @@ import {
   buscarRestaurantesPorTexto,
   buscarRestaurantesProximos,
 } from '@/src/services/restauranteServices';
-import { listarMetricasQmesa, QmesaMetrica } from '@/src/services/qmesaPublicApi';
+import { listarLotacoesQmesa, listarMetricasQmesa, QmesaMetrica } from '@/src/services/qmesaPublicApi';
 
 const { width } = Dimensions.get('window');
 const menuWidth = width * 0.7;
@@ -445,24 +445,34 @@ export default function MapaComTudo() {
     filtro: string,
   ): Promise<Restaurante[]> => {
     try {
-      const metricas = await listarMetricasQmesa();
+      let metricas: QmesaMetrica[] = [];
+      try {
+        metricas = await listarMetricasQmesa();
+      } catch (error) {
+        console.warn('View api_v_metricas indisponivel, tentando api_v_lotacao:', error);
+        metricas = await listarLotacoesQmesa() as QmesaMetrica[];
+      }
       const termo = textoNormalizado(filtro);
-
-      return metricas
-        .filter((item): item is QmesaMetrica & { latitude: number; longitude: number } =>
+      const comCoordenadas = metricas.filter(
+        (item): item is QmesaMetrica & { latitude: number; longitude: number } =>
           typeof item.latitude === 'number' && typeof item.longitude === 'number',
-        )
-        .filter((item) => item.aberto_agora !== false)
-        .filter((item) => {
-          if (!termo || filtro === 'restaurante') return true;
-          return textoNormalizado(item.restaurante_nome || '').includes(termo);
-        })
-        .filter((item) =>
-          calcularDistanciaMetros(
-            { latitude, longitude },
-            { latitude: item.latitude, longitude: item.longitude },
-          ) <= raio,
-        )
+      );
+      const abertos = comCoordenadas.filter((item) => item.aberto_agora !== false);
+      const porTexto = abertos.filter((item) => {
+        if (!termo || filtro === 'restaurante') return true;
+        return textoNormalizado(item.restaurante_nome || '').includes(termo);
+      });
+
+      console.info('[Qmesa API] Filtro no mapa:', {
+        recebidos: metricas.length,
+        comCoordenadas: comCoordenadas.length,
+        abertos: abertos.length,
+        exibidosSemFiltroDeRaio: porTexto.length,
+        raioIgnoradoParaQmesa: raio,
+        centroUsuario: { latitude, longitude },
+      });
+
+      return porTexto
         .map((item) => ({
           id: item.restaurante_id,
           nome: item.restaurante_nome,
@@ -576,7 +586,7 @@ export default function MapaComTudo() {
           <Text style={styles.headerTitle}>QueueGOO</Text>
           <Text style={styles.headerSubtitle}>
             {filtroMapa ? `${filtroMapa}: ` : params.termoBusca ? `${params.termoBusca}: ` : ''}
-            {lugares.length} locais em ate {raioMapa / 1000} km
+            {lugares.length} locais, incluindo Qmesa
           </Text>
         </View>
         <TouchableOpacity style={styles.headerIconButton} onPress={irParaBuscar}>

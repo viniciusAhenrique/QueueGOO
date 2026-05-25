@@ -20,6 +20,7 @@ import {
   buscarRestaurantesProximos,
   RestauranteResumo,
 } from '@/src/services/restauranteServices';
+import { listarLotacoesQmesa, listarMetricasQmesa, QmesaMetrica } from '@/src/services/qmesaPublicApi';
 
 interface LocalizacaoCoords {
   latitude: number;
@@ -57,6 +58,26 @@ function ehRestaurante(restaurante: RestauranteResumo) {
   return !ehMercado(restaurante);
 }
 
+function textoNormalizado(texto: string) {
+  return texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function calcularDistanciaMetros(origem: LocalizacaoCoords, destino: LocalizacaoCoords) {
+  const raioTerra = 6371000;
+  const lat1 = (origem.latitude * Math.PI) / 180;
+  const lat2 = (destino.latitude * Math.PI) / 180;
+  const deltaLat = ((destino.latitude - origem.latitude) * Math.PI) / 180;
+  const deltaLng = ((destino.longitude - origem.longitude) * Math.PI) / 180;
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) ** 2;
+
+  return raioTerra * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export default function BuscarLayer() {
   const [searchQuery, setSearchQuery] = useState('');
   const [categoriaSelecionada, setCategoriaSelecionada] = useState('');
@@ -68,6 +89,65 @@ export default function BuscarLayer() {
   const [buscaFeita, setBuscaFeita] = useState(false);
 
   const router = useRouter();
+
+  const buscarQmesa = useCallback(async (termo: string): Promise<RestauranteResumo[]> => {
+    try {
+      let metricas: QmesaMetrica[] = [];
+      try {
+        metricas = await listarMetricasQmesa();
+      } catch (error) {
+        console.warn('View api_v_metricas indisponivel na busca, tentando api_v_lotacao:', error);
+        metricas = await listarLotacoesQmesa() as QmesaMetrica[];
+      }
+
+      const termoNormalizado = textoNormalizado(termo);
+      const comCoordenadas = metricas.filter(
+        (item): item is QmesaMetrica & { latitude: number; longitude: number } =>
+          typeof item.latitude === 'number' && typeof item.longitude === 'number',
+      );
+      const abertos = comCoordenadas.filter((item) => item.aberto_agora !== false);
+      const porTexto = abertos.filter((item) => {
+        if (!termoNormalizado) return true;
+        return textoNormalizado(item.restaurante_nome || '').includes(termoNormalizado);
+      });
+
+      console.info('[Qmesa API] Filtro na tela de busca:', {
+        recebidos: metricas.length,
+        comCoordenadas: comCoordenadas.length,
+        abertos: abertos.length,
+        exibidosSemFiltroDeRaio: porTexto.length,
+        termo,
+      });
+
+      return porTexto.map((item) => ({
+        google_place_id: item.restaurante_id,
+        nome: item.restaurante_nome,
+        endereco: 'Parceiro Qmesa com dados ao vivo',
+        latitude: item.latitude,
+        longitude: item.longitude,
+        foto_url: null,
+        aberto_agora: item.aberto_agora ?? true,
+        tipos: ['restaurant', 'qmesa'],
+        distancia_metros: localizacao
+          ? Math.round(
+              calcularDistanciaMetros(localizacao, {
+                latitude: item.latitude,
+                longitude: item.longitude,
+              }),
+            )
+          : undefined,
+        origem_qmesa: true,
+        movimento_atual: item.movimento_atual || null,
+        recomendacao_visita: item.recomendacao_visita || null,
+        mesas_livres: item.mesas_livres ?? null,
+        capacidade_total: item.capacidade_total ?? null,
+        percentual_ocupacao: item.percentual_ocupacao ?? null,
+      }));
+    } catch (error) {
+      console.warn('API Qmesa indisponivel na busca:', error);
+      return [];
+    }
+  }, [localizacao]);
 
   useEffect(() => {
     (async () => {
@@ -94,11 +174,14 @@ export default function BuscarLayer() {
             ? ''
             : categoriaSelecionada;
       const termo = [termoCategoria, searchQuery].filter(Boolean).join(' ').trim();
-      const data = termo
-        ? await buscarRestaurantesPorTexto(termo, localizacao.latitude, localizacao.longitude, raioBusca)
-        : await buscarRestaurantesProximos(localizacao.latitude, localizacao.longitude, raioBusca);
+      const [data, restaurantesQmesa] = await Promise.all([
+        termo
+          ? buscarRestaurantesPorTexto(termo, localizacao.latitude, localizacao.longitude, raioBusca)
+          : buscarRestaurantesProximos(localizacao.latitude, localizacao.longitude, raioBusca),
+        categoriaSelecionada === 'supermarket' ? Promise.resolve([]) : buscarQmesa(searchQuery),
+      ]);
 
-      const filtrado = data
+      const externosFiltrados = data
         .filter((r) => r.aberto_agora !== false)
         .filter((r) => {
           if (categoriaSelecionada === 'supermarket') return ehMercado(r);
@@ -108,7 +191,10 @@ export default function BuscarLayer() {
           !avaliacaoMinima || (r.nota_google && r.nota_google >= parseFloat(avaliacaoMinima)),
         );
 
-      setResultados(filtrado);
+      const idsExternos = new Set(externosFiltrados.map((r) => r.google_place_id));
+      const qmesaSemDuplicar = restaurantesQmesa.filter((r) => !idsExternos.has(r.google_place_id));
+
+      setResultados([...qmesaSemDuplicar, ...externosFiltrados]);
       setBuscaFeita(true);
     } catch (e) {
       console.error('Erro na busca:', e);
@@ -117,7 +203,7 @@ export default function BuscarLayer() {
     } finally {
       setLoading(false);
     }
-  }, [avaliacaoMinima, categoriaSelecionada, localizacao, raioBusca, searchQuery]);
+  }, [avaliacaoMinima, buscarQmesa, categoriaSelecionada, localizacao, raioBusca, searchQuery]);
 
   const podeExpandirRaio = useMemo(() => raioBusca < raios[raios.length - 1], [raioBusca]);
 
@@ -155,7 +241,18 @@ export default function BuscarLayer() {
       onPress={() =>
         router.push({
           pathname: '/screens/restaurante',
-          params: { placeId: item.google_place_id },
+          params: item.origem_qmesa
+            ? {
+                placeId: item.google_place_id,
+                origemQmesa: '1',
+                nome: item.nome,
+                tipo: 'Restaurante parceiro Qmesa',
+                movimentoAtual: item.movimento_atual || undefined,
+                recomendacaoVisita: item.recomendacao_visita || undefined,
+                mesasLivres: item.mesas_livres?.toString(),
+                capacidadeTotal: item.capacidade_total?.toString(),
+              }
+            : { placeId: item.google_place_id },
         })
       }
     >
@@ -163,15 +260,29 @@ export default function BuscarLayer() {
         <Image source={{ uri: item.foto_url }} style={styles.cardImage} />
       ) : (
         <View style={styles.cardImageFallback}>
-          <MaterialIcons name={ehMercado(item) ? 'storefront' : 'restaurant'} size={34} color={BLUE_DARK} />
+          <MaterialIcons
+            name={item.origem_qmesa ? 'verified' : ehMercado(item) ? 'storefront' : 'restaurant'}
+            size={34}
+            color={item.origem_qmesa ? '#FF8F00' : BLUE_DARK}
+          />
         </View>
       )}
       <View style={styles.cardContent}>
         <Text style={styles.nome} numberOfLines={2}>{item.nome}</Text>
         <Text style={styles.tipo} numberOfLines={2}>{item.endereco || 'Endereco nao informado'}</Text>
+        {item.origem_qmesa && (
+          <View style={styles.qmesaBadge}>
+            <MaterialIcons name="verified" size={14} color="#FFFFFF" />
+            <Text style={styles.qmesaBadgeText}>Qmesa ao vivo</Text>
+          </View>
+        )}
         <View style={styles.cardFooter}>
           <Text style={styles.distance}>
-            {item.distancia_metros ? `${(item.distancia_metros / 1000).toFixed(1)} km` : 'Perto de voce'}
+            {item.distancia_metros
+              ? `${(item.distancia_metros / 1000).toFixed(1)} km`
+              : item.origem_qmesa
+                ? 'Qmesa'
+                : 'Perto de voce'}
           </Text>
           <Text style={styles.openBadge}>
             {item.aberto_agora === true ? 'Aberto agora' : 'Horario nao informado'}
@@ -189,7 +300,7 @@ export default function BuscarLayer() {
         </TouchableOpacity>
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Busca</Text>
-          <Text style={styles.headerSubtitle}>Restaurantes por raio</Text>
+          <Text style={styles.headerSubtitle}>Qmesa, restaurantes e lugares</Text>
         </View>
         <View style={styles.iconGhost} />
       </View>
@@ -269,7 +380,7 @@ export default function BuscarLayer() {
           !loading && buscaFeita ? (
             <View style={styles.emptyState}>
               <MaterialIcons name="search-off" size={32} color={BLUE_DARK} />
-              <Text style={styles.emptyTitle}>Nenhum restaurante encontrado neste raio.</Text>
+              <Text style={styles.emptyTitle}>Nenhum restaurante encontrado nesta busca.</Text>
               {podeExpandirRaio ? (
                 <TouchableOpacity style={styles.expandButton} onPress={expandirRaio}>
                   <MaterialIcons name="travel-explore" size={18} color="#FFFFFF" />
@@ -410,6 +521,18 @@ const styles = StyleSheet.create({
   cardContent: { padding: 12 },
   nome: { fontSize: 17, fontWeight: '800', color: BLUE_DARK },
   tipo: { fontSize: 13, color: '#555', marginTop: 4, lineHeight: 18 },
+  qmesaBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderRadius: 8,
+    backgroundColor: '#FF8F00',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  qmesaBadgeText: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
   distance: { fontSize: 13, color: '#FF8F00', fontWeight: '800' },
   cardFooter: {
     flexDirection: 'row',
