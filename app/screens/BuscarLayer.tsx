@@ -111,13 +111,15 @@ export default function BuscarLayer() {
         return textoNormalizado(item.restaurante_nome || '').includes(termoNormalizado);
       });
 
-      console.info('[Qmesa API] Filtro na tela de busca:', {
-        recebidos: metricas.length,
-        comCoordenadas: comCoordenadas.length,
-        abertos: abertos.length,
-        exibidosSemFiltroDeRaio: porTexto.length,
-        termo,
-      });
+      if (__DEV__) {
+        console.info('[Qmesa API] Filtro na tela de busca:', {
+          recebidos: metricas.length,
+          comCoordenadas: comCoordenadas.length,
+          abertos: abertos.length,
+          exibidosSemFiltroDeRaio: porTexto.length,
+          termo,
+        });
+      }
 
       return porTexto.map((item) => ({
         google_place_id: item.restaurante_id,

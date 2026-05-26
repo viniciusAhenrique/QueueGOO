@@ -47,11 +47,16 @@ FIREBASE_SERVICE_ACCOUNT_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
 APP_ENV = os.getenv("APP_ENV", "development")
 DEBUG   = os.getenv("DEBUG", "false").lower() == "true"
 PORT    = int(os.getenv("PORT", "8000"))
+DIAGNOSTIC_TOKEN = os.getenv("DIAGNOSTIC_TOKEN")
 ALLOWED_ORIGINS = [
     origem.strip()
     for origem in os.getenv("ALLOWED_ORIGINS", "").split(",")
     if origem.strip()
 ]
+
+# Diagnostico local Qmesa. Use apenas em desenvolvimento.
+QMESA_PUBLIC_SUPABASE_URL = os.getenv("QMESA_PUBLIC_SUPABASE_URL")
+QMESA_PUBLIC_ANON_KEY = os.getenv("QMESA_PUBLIC_ANON_KEY")
 
 # ============================================================
 # VALIDAÇÃO — falha imediatamente se faltar algo crítico

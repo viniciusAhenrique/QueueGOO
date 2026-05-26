@@ -62,7 +62,7 @@ function calcularDistanciaMetros(origem: Coordenadas, destino: Coordenadas) {
 const PIN_COLORS = {
   desconhecida: '#8E8E93',
   baixa: '#34C759',
-  media: '#FFCC00',
+  media: '#FFB020',
   alta: '#FF3B30',
 };
 
@@ -112,6 +112,36 @@ type Restaurante = {
   mesasLivres?: number | null;
   capacidadeTotal?: number | null;
 };
+
+function calcularLotacaoPercentual(item: {
+  percentual_ocupacao?: number | null;
+  mesas_ocupadas?: number | null;
+  mesas_totais?: number | null;
+  ocupantes_atuais?: number | null;
+  capacidade_total?: number | null;
+}) {
+  if (typeof item.percentual_ocupacao === 'number') {
+    return Math.max(0, Math.min(100, Math.round(item.percentual_ocupacao)));
+  }
+
+  if (
+    typeof item.mesas_ocupadas === 'number' &&
+    typeof item.mesas_totais === 'number' &&
+    item.mesas_totais > 0
+  ) {
+    return Math.max(0, Math.min(100, Math.round((item.mesas_ocupadas / item.mesas_totais) * 100)));
+  }
+
+  if (
+    typeof item.ocupantes_atuais === 'number' &&
+    typeof item.capacidade_total === 'number' &&
+    item.capacidade_total > 0
+  ) {
+    return Math.max(0, Math.min(100, Math.round((item.ocupantes_atuais / item.capacidade_total) * 100)));
+  }
+
+  return null;
+}
 
 function itemEhMercado(item: { tipos?: string[] }) {
   return item.tipos?.some((tipo) =>
@@ -223,7 +253,7 @@ export default function MapaComTudo() {
 
   const getPinColor = (lot: number | null) => {
     if (lot === null) return PIN_COLORS.desconhecida;
-    if (lot > 80) return PIN_COLORS.alta;
+    if (lot >= 75) return PIN_COLORS.alta;
     if (lot >= 40) return PIN_COLORS.media;
     return PIN_COLORS.baixa;
   };
@@ -463,14 +493,15 @@ export default function MapaComTudo() {
         return textoNormalizado(item.restaurante_nome || '').includes(termo);
       });
 
-      console.info('[Qmesa API] Filtro no mapa:', {
-        recebidos: metricas.length,
-        comCoordenadas: comCoordenadas.length,
-        abertos: abertos.length,
-        exibidosSemFiltroDeRaio: porTexto.length,
-        raioIgnoradoParaQmesa: raio,
-        centroUsuario: { latitude, longitude },
-      });
+      if (__DEV__) {
+        console.info('[Qmesa API] Filtro no mapa:', {
+          recebidos: metricas.length,
+          comCoordenadas: comCoordenadas.length,
+          abertos: abertos.length,
+          exibidosSemFiltroDeRaio: porTexto.length,
+          raioIgnoradoParaQmesa: raio,
+        });
+      }
 
       return porTexto
         .map((item) => ({
@@ -480,10 +511,7 @@ export default function MapaComTudo() {
           latitude: item.latitude,
           longitude: item.longitude,
           foto: null,
-          lotacao:
-            typeof item.percentual_ocupacao === 'number'
-              ? Math.round(item.percentual_ocupacao)
-              : null,
+          lotacao: calcularLotacaoPercentual(item),
           origemQmesa: true,
           movimentoAtual: item.movimento_atual || null,
           recomendacaoVisita: item.recomendacao_visita || null,
@@ -512,7 +540,7 @@ export default function MapaComTudo() {
     const lugaresAtualizados = await Promise.all(
       lugares.map(async (lugar) => ({
         ...lugar,
-        lotacao: await buscarLotacao(lugar.id),
+        lotacao: lugar.origemQmesa && lugar.lotacao !== null ? lugar.lotacao : await buscarLotacao(lugar.id),
       })),
     );
 
@@ -541,11 +569,19 @@ export default function MapaComTudo() {
           <Marker
             key={lugar.id}
             coordinate={{ latitude: lugar.latitude, longitude: lugar.longitude }}
-            pinColor={lugar.origemQmesa ? '#FF9500' : getPinColor(lugar.lotacao)}
+            pinColor={getPinColor(lugar.lotacao)}
             onPress={() => setLugarSelecionado(lugar)}
           >
             {lugar.origemQmesa ? (
-              <View style={styles.qmesaMarker}>
+              <View
+                style={[
+                  styles.qmesaMarker,
+                  {
+                    backgroundColor: getPinColor(lugar.lotacao),
+                    borderColor: lugar.lotacao === null ? '#FF9500' : '#FFFFFF',
+                  },
+                ]}
+              >
                 <MaterialIcons name="verified" size={18} color="#FFFFFF" />
               </View>
             ) : undefined}

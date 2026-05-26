@@ -59,6 +59,7 @@ export interface RestauranteDetalhesApi extends RestauranteResumo {
 export interface LotacaoAtual {
   place_id: string;
   lotacao: number | null;
+  fonte?: string;
 }
 
 function pareceUuid(valor: string) {

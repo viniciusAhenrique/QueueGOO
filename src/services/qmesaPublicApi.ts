@@ -11,9 +11,13 @@ export interface QmesaRestaurante {
 export interface QmesaLotacao {
   restaurante_id: string;
   restaurante_nome: string;
+  restaurante_cnpj?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   capacidade_total: number | null;
   mesas_totais: number | null;
   mesas_ocupadas: number | null;
+  mesas_livres?: number | null;
   ocupantes_atuais: number | null;
   percentual_ocupacao: number | null;
   atualizado_em: string | null;
@@ -66,6 +70,18 @@ export interface QmesaReserva {
   tempo_ate_reserva: string | null;
 }
 
+export interface QmesaCardapioItem {
+  id: string;
+  restaurante_id: string;
+  restaurante_slug?: string | null;
+  restaurante_nome?: string | null;
+  nome: string;
+  descricao?: string | null;
+  preco?: number | string | null;
+  categoria?: string | null;
+  imagem_url?: string | null;
+}
+
 async function qmesaFetch<T>(view: string, params: Record<string, SupabaseFilterValue>) {
   const searchParams = new URLSearchParams();
 
@@ -74,7 +90,9 @@ async function qmesaFetch<T>(view: string, params: Record<string, SupabaseFilter
   }
 
   const url = `${QMESA_REST_URL}/${view}?${searchParams.toString()}`;
-  console.info(`[Qmesa API] Consultando ${view}:`, url);
+  if (__DEV__) {
+    console.info(`[Qmesa API] Consultando ${view}`);
+  }
 
   const response = await fetch(url, {
     headers: {
@@ -86,18 +104,21 @@ async function qmesaFetch<T>(view: string, params: Record<string, SupabaseFilter
 
   if (!response.ok) {
     const erro = await response.text();
-    console.warn(`[Qmesa API] Erro em ${view}:`, {
-      status: response.status,
-      body: erro,
-    });
+    if (__DEV__) {
+      console.warn(`[Qmesa API] Erro em ${view}:`, {
+        status: response.status,
+        body: erro.slice(0, 300),
+      });
+    }
     throw new Error(`Erro HTTP ${response.status} ao consultar ${view}.`);
   }
 
   const dados = (await response.json()) as T;
-  console.info(`[Qmesa API] Resposta de ${view}:`, {
-    total: Array.isArray(dados) ? dados.length : null,
-    dados,
-  });
+  if (__DEV__) {
+    console.info(`[Qmesa API] Resposta de ${view}:`, {
+      total: Array.isArray(dados) ? dados.length : null,
+    });
+  }
 
   return dados;
 }
@@ -154,5 +175,13 @@ export function consultarReservasQmesa(restauranteId: string) {
     select: '*',
     restaurante_id: `eq.${restauranteId}`,
     order: 'data_hora.asc',
+  });
+}
+
+export function consultarCardapioQmesa(restauranteId: string) {
+  return qmesaFetch<QmesaCardapioItem[]>('api_v_cardapio', {
+    select: '*',
+    restaurante_id: `eq.${restauranteId}`,
+    order: 'categoria.asc,nome.asc',
   });
 }

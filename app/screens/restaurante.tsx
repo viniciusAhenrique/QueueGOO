@@ -24,6 +24,12 @@ import {
   buscarDetalhesRestaurante,
   buscarLotacaoAtual,
 } from '@/src/services/restauranteServices';
+import {
+  consultarCardapioQmesa,
+  consultarFilaQmesa,
+  consultarLotacaoQmesa,
+  QmesaCardapioItem,
+} from '@/src/services/qmesaPublicApi';
 
 interface RestauranteDetalhes {
   nome: string;
@@ -112,6 +118,13 @@ export default function Restaurante() {
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [favoritado, setFavoritado] = useState(false);
+  const [cardapioQmesa, setCardapioQmesa] = useState<QmesaCardapioItem[]>([]);
+  const [cardapioLoading, setCardapioLoading] = useState(false);
+  const [filaQmesa, setFilaQmesa] = useState<{
+    total_na_fila: number | null;
+    tempo_estimado_primeiro_cliente: number | null;
+    tempo_medio_minutos: number | null;
+  } | null>(null);
 
   const user = auth.currentUser;
 
@@ -165,6 +178,44 @@ export default function Restaurante() {
         console.warn('Lotacao indisponivel para restaurante:', placeId, error);
       });
   }, [lotacaoPercentual, placeId]);
+
+  useEffect(() => {
+    if (!placeId || !restauranteQmesa) return;
+
+    let ativo = true;
+    setCardapioLoading(true);
+
+    Promise.all([
+      consultarCardapioQmesa(placeId).catch((error) => {
+        console.warn('Cardapio Qmesa indisponivel:', error);
+        return [];
+      }),
+      consultarFilaQmesa(placeId).catch((error) => {
+        console.warn('Fila Qmesa indisponivel:', error);
+        return null;
+      }),
+      consultarLotacaoQmesa(placeId).catch((error) => {
+        console.warn('Lotacao Qmesa indisponivel nos detalhes:', error);
+        return null;
+      }),
+    ])
+      .then(([cardapio, fila, lotacaoAtual]) => {
+        if (!ativo) return;
+        setCardapioQmesa(cardapio);
+        setFilaQmesa(fila);
+
+        if (typeof lotacaoAtual?.percentual_ocupacao === 'number') {
+          setLotacaoPercentual(Math.max(0, Math.min(100, Math.round(lotacaoAtual.percentual_ocupacao))));
+        }
+      })
+      .finally(() => {
+        if (ativo) setCardapioLoading(false);
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [placeId, restauranteQmesa]);
 
   useEffect(() => {
     const checarFavorito = async () => {
@@ -253,19 +304,25 @@ export default function Restaurante() {
   };
 
   const calcularTempoEspera = (lot: number): string => {
+    if (filaQmesa?.tempo_estimado_primeiro_cliente !== null && filaQmesa?.tempo_estimado_primeiro_cliente !== undefined) {
+      return `${filaQmesa.tempo_estimado_primeiro_cliente} min`;
+    }
     if (lot > 80) return '30-50 min';
     if (lot >= 40) return '15-30 min';
     return '5-15 min';
   };
 
   const calcularPessoasNaFila = (lot: number): string => {
+    if (filaQmesa?.total_na_fila !== null && filaQmesa?.total_na_fila !== undefined) {
+      return `${filaQmesa.total_na_fila} pessoa${filaQmesa.total_na_fila === 1 ? '' : 's'}`;
+    }
     if (lot > 80) return '+30 pessoas';
     if (lot >= 40) return '10-30 pessoas';
     return 'menos de 10';
   };
 
   const calcularStatusLotacao = (lot: number): 'baixa' | 'media' | 'alta' => {
-    if (lot > 80) return 'alta';
+    if (lot >= 75) return 'alta';
     if (lot >= 40) return 'media';
     return 'baixa';
   };
@@ -359,6 +416,19 @@ export default function Restaurante() {
   ]
     .map((item) => ({ ...item, texto: valorDisponibilidade(item.value) }))
     .filter((item) => item.texto);
+  const cardapioPorCategoria = cardapioQmesa.reduce<Record<string, QmesaCardapioItem[]>>(
+    (acc, item) => {
+      const categoria = item.categoria || 'Cardapio';
+      acc[categoria] = [...(acc[categoria] || []), item];
+      return acc;
+    },
+    {},
+  );
+  const formatarPreco = (preco: QmesaCardapioItem['preco']) => {
+    const valor = typeof preco === 'string' ? Number(preco) : preco;
+    if (typeof valor !== 'number' || !Number.isFinite(valor)) return '';
+    return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
 
   return (
     <>
@@ -437,12 +507,64 @@ export default function Restaurante() {
                   <Text style={styles.statusValue}>{tempoEspera}</Text>
                   <Text style={styles.statusLabel}>Tempo estimado</Text>
                 </View>
+                <View style={styles.statusItem}>
+                  <Text style={styles.statusValue}>{lotacaoPercentual}%</Text>
+                  <Text style={styles.statusLabel}>Ocupacao</Text>
+                </View>
               </View>
             </View>
           ) : (
             <View style={styles.panel}>
               <Text style={styles.sectionTitle}>Fila e espera</Text>
               <Text style={styles.info}>Lotacao indisponivel no momento.</Text>
+            </View>
+          )}
+
+          {restauranteQmesa && (
+            <View style={styles.panel}>
+              <View style={styles.reservationHeader}>
+                <View style={styles.reservationHeaderText}>
+                  <Text style={styles.sectionTitle}>Cardapio Qmesa</Text>
+                  <Text style={styles.reservationSubtitle}>
+                    Itens recebidos diretamente da API publica Qmesa.
+                  </Text>
+                </View>
+                <MaterialIcons name="restaurant-menu" size={28} color={BLUE_DARK} />
+              </View>
+
+              {cardapioLoading ? (
+                <ActivityIndicator size="small" color={BLUE_DARK} style={styles.inlineLoader} />
+              ) : cardapioQmesa.length > 0 ? (
+                Object.entries(cardapioPorCategoria).map(([categoria, itens]) => (
+                  <View key={categoria} style={styles.menuGroup}>
+                    <Text style={styles.menuCategory}>{categoria}</Text>
+                    {itens.map((item) => (
+                      <View key={item.id} style={styles.menuItem}>
+                        {item.imagem_url ? (
+                          <Image source={{ uri: item.imagem_url }} style={styles.menuImage} />
+                        ) : (
+                          <View style={styles.menuImageFallback}>
+                            <MaterialIcons name="restaurant" size={20} color={BLUE_DARK} />
+                          </View>
+                        )}
+                        <View style={styles.menuTextArea}>
+                          <View style={styles.menuTitleRow}>
+                            <Text style={styles.menuName} numberOfLines={2}>{item.nome}</Text>
+                            <Text style={styles.menuPrice}>{formatarPreco(item.preco)}</Text>
+                          </View>
+                          {item.descricao ? (
+                            <Text style={styles.menuDescription} numberOfLines={3}>
+                              {item.descricao}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.info}>Cardapio indisponivel para este restaurante.</Text>
+              )}
             </View>
           )}
 
@@ -617,11 +739,13 @@ const styles = StyleSheet.create({
   },
   statusGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     marginTop: 12,
   },
   statusItem: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '30%',
     minHeight: 72,
     borderRadius: 8,
     backgroundColor: '#E3F2FD',
@@ -740,4 +864,48 @@ const styles = StyleSheet.create({
   qmesaBadgeLargeText: { color: '#FFFFFF', fontWeight: '900', fontSize: 13 },
   qmesaText: { color: '#7A3E00', fontSize: 14, fontWeight: '800', marginTop: 2 },
   qmesaHint: { color: '#7A3E00', fontSize: 14, lineHeight: 20, marginTop: 6 },
+  inlineLoader: { marginVertical: 12 },
+  menuGroup: {
+    marginTop: 12,
+    gap: 8,
+  },
+  menuCategory: {
+    color: BLUE_DARK,
+    fontSize: 14,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  menuItem: {
+    minHeight: 78,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E3F2FD',
+    backgroundColor: '#F8FCFF',
+    padding: 10,
+    flexDirection: 'row',
+    gap: 10,
+  },
+  menuImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    backgroundColor: '#E3F2FD',
+  },
+  menuImageFallback: {
+    width: 56,
+    height: 56,
+    borderRadius: 8,
+    backgroundColor: '#E3F2FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuTextArea: { flex: 1 },
+  menuTitleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-start',
+  },
+  menuName: { flex: 1, color: INK, fontSize: 14, fontWeight: '900' },
+  menuPrice: { color: '#B7791F', fontSize: 13, fontWeight: '900' },
+  menuDescription: { color: '#4B6475', fontSize: 12, lineHeight: 17, marginTop: 3 },
 });

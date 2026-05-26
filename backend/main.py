@@ -14,7 +14,7 @@ from config import (
     FIREBASE_SERVICE_ACCOUNT_JSON,
     FIREBASE_SERVICE_ACCOUNT_PATH,
 )
-from routes import auth, restaurantes, lotacao, uploads
+from routes import auth, restaurantes, lotacao, uploads, diagnostico
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -86,6 +86,7 @@ app.include_router(auth.router,         prefix="/auth",        tags=["Auth"])
 app.include_router(restaurantes.router, prefix="/restaurantes", tags=["Restaurantes"])
 app.include_router(lotacao.router,      prefix="/lotacao",      tags=["Lotação"])
 app.include_router(uploads.router,      prefix="/uploads",      tags=["Uploads"])
+app.include_router(diagnostico.router,  prefix="/diagnostico",  tags=["Diagnostico"])
 
 # ============================================================
 # EVENTOS
