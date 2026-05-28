@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   orderBy,
@@ -13,6 +14,7 @@ import {
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -129,17 +131,61 @@ export default function Notificacoes() {
 
   const marcarTodasComoLidas = async () => {
     if (!usuario) return;
+    const naoLidas = notificacoes.filter((notificacao) => !notificacao.lida);
+    if (!naoLidas.length) return;
 
     const batch = writeBatch(db);
-    notificacoes
-      .filter((notificacao) => !notificacao.lida)
-      .forEach((notificacao) => {
-        batch.update(doc(db, 'usuarios', usuario.uid, 'notificacoes', notificacao.id), {
-          lida: true,
-        });
+    naoLidas.forEach((notificacao) => {
+      batch.update(doc(db, 'usuarios', usuario.uid, 'notificacoes', notificacao.id), {
+        lida: true,
       });
+    });
 
     await batch.commit();
+  };
+
+  const apagarNotificacao = (notificacao: Notificacao) => {
+    if (!usuario) return;
+
+    Alert.alert('Apagar notificacao?', 'Essa notificacao sera removida da sua lista.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Apagar',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteDoc(doc(db, 'usuarios', usuario.uid, 'notificacoes', notificacao.id));
+        },
+      },
+    ]);
+  };
+
+  const apagarNotificacoesLidas = () => {
+    if (!usuario) return;
+
+    const lidas = notificacoes.filter((notificacao) => notificacao.lida);
+    const alvo = lidas.length ? lidas : notificacoes;
+    if (!alvo.length) return;
+
+    Alert.alert(
+      lidas.length ? 'Apagar notificacoes lidas?' : 'Apagar todas as notificacoes?',
+      lidas.length
+        ? `${lidas.length} notificacao(oes) lida(s) serao removidas.`
+        : 'Nao ha notificacoes lidas. Todas as notificacoes serao removidas.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Apagar',
+          style: 'destructive',
+          onPress: async () => {
+            const batch = writeBatch(db);
+            alvo.forEach((notificacao) => {
+              batch.delete(doc(db, 'usuarios', usuario.uid, 'notificacoes', notificacao.id));
+            });
+            await batch.commit();
+          },
+        },
+      ],
+    );
   };
 
   const abrirNotificacao = async (notificacao: Notificacao) => {
@@ -192,13 +238,22 @@ export default function Notificacoes() {
             {pendentes ? `${pendentes} nao lida${pendentes > 1 ? 's' : ''}` : 'Tudo em dia'}
           </Text>
         </View>
-        <TouchableOpacity
-          style={[styles.iconButton, !pendentes && styles.iconButtonDisabled]}
-          onPress={marcarTodasComoLidas}
-          disabled={!pendentes}
-        >
-          <MaterialIcons name="done-all" size={22} color={pendentes ? BLUE_DARK : '#94A3B8'} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.iconButton, !pendentes && styles.iconButtonDisabled]}
+            onPress={marcarTodasComoLidas}
+            disabled={!pendentes}
+          >
+            <MaterialIcons name="done-all" size={22} color={pendentes ? BLUE_DARK : '#94A3B8'} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.iconButton, !notificacoes.length && styles.iconButtonDisabled]}
+            onPress={apagarNotificacoesLidas}
+            disabled={!notificacoes.length}
+          >
+            <MaterialIcons name="delete-sweep" size={22} color={notificacoes.length ? '#9F1239' : '#94A3B8'} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {carregando ? (
@@ -230,6 +285,17 @@ export default function Notificacoes() {
                   <View style={styles.cardHeader}>
                     <Text style={styles.cardTitle}>{notificacao.titulo}</Text>
                     {!notificacao.lida && <View style={styles.unreadDot} />}
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        apagarNotificacao(notificacao);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Apagar notificacao"
+                    >
+                      <MaterialIcons name="delete-outline" size={19} color="#9F1239" />
+                    </TouchableOpacity>
                   </View>
                   <Text style={styles.cardMessage}>{notificacao.mensagem}</Text>
                   {!!notificacao.criadoEmTexto && (
@@ -274,6 +340,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconButtonDisabled: { opacity: 0.65 },
+  headerActions: { flexDirection: 'row', gap: 8 },
   headerText: { flex: 1 },
   headerTitle: { color: INK, fontSize: 24, fontFamily: 'Poppins_700Bold' },
   headerSubtitle: { color: '#3B5366', fontSize: 12, marginTop: 2 },
@@ -304,6 +371,14 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardTitle: { flex: 1, color: INK, fontSize: 15, fontFamily: 'Urbanist_700Bold' },
   unreadDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: BLUE_DARK },
+  deleteButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    backgroundColor: '#FFF1F2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cardMessage: { color: '#4B6475', lineHeight: 19, marginTop: 4 },
   cardDate: { color: '#64748B', fontSize: 12, marginTop: 7 },
   loader: { marginTop: 40 },

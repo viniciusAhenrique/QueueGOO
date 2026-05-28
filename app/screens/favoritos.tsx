@@ -18,7 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '@/firebaseconfig';
 
-const BLUE = '#4FC3F7';
 const BLUE_DARK = '#0D47A1';
 const INK = '#1e232c';
 

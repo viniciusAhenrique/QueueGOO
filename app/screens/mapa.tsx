@@ -294,6 +294,8 @@ export default function MapaComTudo() {
     }, 120000);
 
     return () => clearInterval(interval);
+  // atualizarLotacoes usa o snapshot atual de `lugares`; incluir a funcao recriaria o intervalo a cada render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser, lugares]);
 
   useEffect(() => {
@@ -314,6 +316,8 @@ export default function MapaComTudo() {
   useEffect(() => {
     if (!userLocation) return;
     buscarGooglePlaces(userLocation.latitude, userLocation.longitude);
+  // buscarGooglePlaces le filtros via refs para evitar chamadas duplicadas durante digitacao/mudanca de raio.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroMapa, raioMapa, userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {
@@ -398,6 +402,8 @@ export default function MapaComTudo() {
       locationSubscription.current?.remove();
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
+  // Watcher de localizacao deve ser registrado uma unica vez; filtros dinamicos sao lidos via refs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const buscarGooglePlaces = async (latitude: number, longitude: number) => {

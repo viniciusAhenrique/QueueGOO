@@ -93,7 +93,7 @@ export async function buscarRestaurantesPorTexto(
 ) {
   const params = new URLSearchParams({ q: query });
 
-  if (latitude && longitude) {
+  if (latitude !== undefined && longitude !== undefined) {
     params.set('lat', String(latitude));
     params.set('lng', String(longitude));
     params.set('raio', String(raio));

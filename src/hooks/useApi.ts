@@ -28,7 +28,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
       ...requestOptions,
       headers: finalHeaders,
     });
-  } catch (error) {
+  } catch {
     throw new Error(
       `Nao foi possivel conectar com a API em ${API_BASE_URL}. ` +
         'Confirme que o backend esta rodando com --host 0.0.0.0 e que o celular/emulador consegue acessar esse endereco.',
@@ -36,11 +36,24 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   }
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
 
   if (!response.ok) {
-    const detail = data?.detail || 'Erro ao comunicar com a API.';
-    throw new Error(Array.isArray(detail) ? detail.map((item) => item.msg).join(', ') : detail);
+    const detail =
+      data && typeof data === 'object' && 'detail' in data
+        ? (data as { detail?: unknown }).detail
+        : data || 'Erro ao comunicar com a API.';
+    throw new Error(
+      Array.isArray(detail)
+        ? detail.map((item) => String((item as { msg?: unknown }).msg || item)).join(', ')
+        : String(detail),
+    );
   }
 
   return data as T;

@@ -33,7 +33,6 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
-  setDoc,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -82,18 +81,9 @@ type Evento = {
   ocultoPara: string[];
 };
 
-type Notificacao = {
-  id: string;
-  titulo: string;
-  mensagem: string;
-  eventoId?: string;
-  lida: boolean;
-};
-
 type Aba = 'feed' | 'meus' | 'amigos';
 
 const EVENTOS_COLLECTION = 'eventos_sociais';
-const BLUE = '#4FC3F7';
 const BLUE_DARK = '#0D47A1';
 const INK = '#1e232c';
 
@@ -153,7 +143,6 @@ export default function Social() {
   const [salvando, setSalvando] = useState(false);
   const [formAberto, setFormAberto] = useState(params.novoEvento === '1');
   const [comentariosDraft, setComentariosDraft] = useState<Record<string, string>>({});
-  const [notificacoes, setNotificacoes] = useState<Notificacao[]>([]);
   const [buscaLocal, setBuscaLocal] = useState(params.local || '');
   const [resultadosLocal, setResultadosLocal] = useState<RestauranteResumo[]>([]);
   const [buscandoLocal, setBuscandoLocal] = useState(false);
@@ -279,34 +268,6 @@ export default function Social() {
       (error) => {
         console.error('Erro ao carregar amigos:', error);
         setAmigos([]);
-      },
-    );
-
-    return () => unsubscribe();
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return undefined;
-
-    const unsubscribe = onSnapshot(
-      collection(db, 'usuarios', user.uid, 'notificacoes'),
-      (snapshot) => {
-        const lista = snapshot.docs.map((documento) => {
-          const dados = documento.data();
-          return {
-            id: documento.id,
-            titulo: String(dados.titulo || 'Notificacao'),
-            mensagem: String(dados.mensagem || ''),
-            eventoId: typeof dados.eventoId === 'string' ? dados.eventoId : undefined,
-            lida: Boolean(dados.lida),
-          };
-        });
-
-        setNotificacoes(lista.filter((notificacao) => !notificacao.lida).slice(0, 3));
-      },
-      (error) => {
-        console.error('Erro ao carregar notificacoes:', error);
-        setNotificacoes([]);
       },
     );
 
@@ -584,15 +545,6 @@ export default function Social() {
       console.error('Erro ao comentar:', error);
       Alert.alert('Erro', 'Nao foi possivel comentar.');
     }
-  };
-
-  const abrirNotificacao = async (notificacao: Notificacao) => {
-    if (!user) return;
-
-    await updateDoc(doc(db, 'usuarios', user.uid, 'notificacoes', notificacao.id), {
-      lida: true,
-    });
-    setAba('meus');
   };
 
   const responderConvite = async (evento: Evento, resposta: 'aceito' | 'recusado') => {

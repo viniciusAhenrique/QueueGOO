@@ -130,6 +130,48 @@ service cloud.firestore {
         .hasOnly(['comentarios', 'atualizadoEm']);
     }
 
+    function validNotificationCreate() {
+      return signedIn()
+        && request.resource.data.keys().hasAll(['tipo', 'titulo', 'mensagem', 'lida', 'criadoEm', 'remetenteUid'])
+        && request.resource.data.keys().hasOnly([
+          'tipo',
+          'titulo',
+          'mensagem',
+          'lida',
+          'criadoEm',
+          'eventoId',
+          'chatId',
+          'postId',
+          'amizadeId',
+          'remetenteUid',
+          'link'
+        ])
+        && request.resource.data.remetenteUid == request.auth.uid
+        && request.resource.data.lida == false
+        && request.resource.data.titulo is string
+        && request.resource.data.titulo.size() > 0
+        && request.resource.data.titulo.size() <= 120
+        && request.resource.data.mensagem is string
+        && request.resource.data.mensagem.size() > 0
+        && request.resource.data.mensagem.size() <= 500
+        && request.resource.data.tipo in [
+          'evento',
+          'comentario',
+          'mensagem_evento',
+          'evento_cancelado',
+          'amizade',
+          'amizade_aceita',
+          'chat',
+          'post',
+          'comentario_post'
+        ];
+    }
+
+    function isRoleParticipant(roleId) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/role_grupos/$(roleId)).data.participantes;
+    }
+
     match /usuarios/{userId} {
       allow read: if signedIn();
       allow create, update, delete: if isOwner(userId);
@@ -146,20 +188,7 @@ service cloud.firestore {
 
       match /notificacoes/{notificacaoId} {
         allow read, update, delete: if isOwner(userId);
-        allow create: if signedIn()
-          && request.resource.data.keys().hasAll(['tipo', 'titulo', 'mensagem', 'lida', 'criadoEm'])
-          && request.resource.data.lida == false
-          && request.resource.data.tipo in [
-            'evento',
-            'comentario',
-            'mensagem_evento',
-            'evento_cancelado',
-            'amizade',
-            'amizade_aceita',
-            'chat',
-            'post',
-            'comentario_post'
-          ];
+        allow create: if validNotificationCreate();
       }
     }
 
@@ -310,6 +339,45 @@ service cloud.firestore {
         allow create: if signedIn()
           && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participantes
           && isFriendInChat(get(/databases/$(database)/documents/chats/$(chatId)).data)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasAll(['uid', 'nome', 'texto', 'criadoEm'])
+          && request.resource.data.texto is string
+          && request.resource.data.texto.size() > 0
+          && request.resource.data.texto.size() <= 1000;
+        allow update, delete: if signedIn() && resource.data.uid == request.auth.uid;
+      }
+    }
+
+    match /role_grupos/{grupoId} {
+      allow read: if signedIn()
+        && request.auth.uid in resource.data.participantes;
+      allow create: if signedIn()
+        && request.resource.data.criadoPor == request.auth.uid
+        && request.auth.uid in request.resource.data.participantes
+        && request.resource.data.keys().hasAll([
+          'nome',
+          'descricao',
+          'participantes',
+          'criadoPor',
+          'criadoPorNome',
+          'criadoEm',
+          'atualizadoEm',
+          'restauranteSorteado'
+        ]);
+      allow update: if signedIn()
+        && (
+          resource.data.criadoPor == request.auth.uid
+          || request.auth.uid in resource.data.participantes
+        )
+        && request.resource.data.criadoPor == resource.data.criadoPor
+        && request.resource.data.participantes.hasAll(resource.data.participantes)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['participantes', 'restauranteSorteado', 'atualizadoEm']);
+      allow delete: if signedIn() && resource.data.criadoPor == request.auth.uid;
+
+      match /mensagens/{mensagemId} {
+        allow read: if isRoleParticipant(grupoId);
+        allow create: if isRoleParticipant(grupoId)
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.keys().hasAll(['uid', 'nome', 'texto', 'criadoEm'])
           && request.resource.data.texto is string

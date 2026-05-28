@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { Platform } from 'react-native';
 
-import { db } from '@/firebaseconfig';
+import { auth, db } from '@/firebaseconfig';
 
 type NotificationPayload = {
   tipo: string;
@@ -124,14 +124,20 @@ export function escutarAberturaDePush() {
 
 export async function criarNotificacaoUsuario(userId: string, payload: NotificationPayload) {
   if (!userId) return;
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return;
+  const payloadSeguro = {
+    ...payload,
+    remetenteUid: payload.remetenteUid || currentUid,
+  };
 
   await addDoc(collection(db, 'usuarios', userId, 'notificacoes'), {
-    ...payload,
+    ...payloadSeguro,
     lida: false,
     criadoEm: serverTimestamp(),
   });
 
-  await enviarPushParaUsuario(userId, payload);
+  await enviarPushParaUsuario(userId, payloadSeguro);
 }
 
 async function enviarPushParaUsuario(userId: string, payload: NotificationPayload) {
