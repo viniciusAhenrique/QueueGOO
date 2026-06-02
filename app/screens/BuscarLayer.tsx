@@ -20,7 +20,12 @@ import {
   buscarRestaurantesProximos,
   RestauranteResumo,
 } from '@/src/services/restauranteServices';
-import { listarLotacoesQmesa, listarMetricasQmesa, QmesaMetrica } from '@/src/services/qmesaPublicApi';
+import {
+  extrairLinkReservaQmesa,
+  listarLotacoesQmesa,
+  listarMetricasQmesa,
+  QmesaMetrica,
+} from '@/src/services/qmesaPublicApi';
 
 interface LocalizacaoCoords {
   latitude: number;
@@ -121,30 +126,41 @@ export default function BuscarLayer() {
         });
       }
 
-      return porTexto.map((item) => ({
-        google_place_id: item.restaurante_id,
-        nome: item.restaurante_nome,
-        endereco: 'Parceiro Qmesa com dados ao vivo',
-        latitude: item.latitude,
-        longitude: item.longitude,
-        foto_url: null,
-        aberto_agora: item.aberto_agora ?? true,
-        tipos: ['restaurant', 'qmesa'],
-        distancia_metros: localizacao
-          ? Math.round(
-              calcularDistanciaMetros(localizacao, {
-                latitude: item.latitude,
-                longitude: item.longitude,
-              }),
-            )
-          : undefined,
-        origem_qmesa: true,
-        movimento_atual: item.movimento_atual || null,
-        recomendacao_visita: item.recomendacao_visita || null,
-        mesas_livres: item.mesas_livres ?? null,
-        capacidade_total: item.capacidade_total ?? null,
-        percentual_ocupacao: item.percentual_ocupacao ?? null,
-      }));
+      return porTexto.map((item) => {
+        const reservaUrlQmesa = extrairLinkReservaQmesa(item);
+        if (__DEV__ && reservaUrlQmesa) {
+          console.info('[Qmesa API] Link de reserva recebido na busca:', {
+            restaurante_id: item.restaurante_id,
+            restaurante_nome: item.restaurante_nome,
+          });
+        }
+
+        return {
+          google_place_id: item.restaurante_id,
+          nome: item.restaurante_nome,
+          endereco: 'Parceiro Qmesa com dados ao vivo',
+          latitude: item.latitude,
+          longitude: item.longitude,
+          foto_url: null,
+          aberto_agora: item.aberto_agora ?? true,
+          tipos: ['restaurant', 'qmesa'],
+          distancia_metros: localizacao
+            ? Math.round(
+                calcularDistanciaMetros(localizacao, {
+                  latitude: item.latitude,
+                  longitude: item.longitude,
+                }),
+              )
+            : undefined,
+          origem_qmesa: true,
+          reserva_url_qmesa: reservaUrlQmesa,
+          movimento_atual: item.movimento_atual || null,
+          recomendacao_visita: item.recomendacao_visita || null,
+          mesas_livres: item.mesas_livres ?? null,
+          capacidade_total: item.capacidade_total ?? null,
+          percentual_ocupacao: item.percentual_ocupacao ?? null,
+        };
+      });
     } catch (error) {
       console.warn('API Qmesa indisponivel na busca:', error);
       return [];
@@ -253,6 +269,7 @@ export default function BuscarLayer() {
                 recomendacaoVisita: item.recomendacao_visita || undefined,
                 mesasLivres: item.mesas_livres?.toString(),
                 capacidadeTotal: item.capacidade_total?.toString(),
+                reservaUrlQmesa: item.reserva_url_qmesa || undefined,
               }
             : { placeId: item.google_place_id },
         })

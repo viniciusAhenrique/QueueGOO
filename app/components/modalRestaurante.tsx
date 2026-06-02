@@ -15,6 +15,7 @@ interface BalaoRestauranteProps {
   recomendacaoVisita?: string | null;
   mesasLivres?: number | null;
   capacidadeTotal?: number | null;
+  reservaUrlQmesa?: string | null;
   onClose: () => void;
 }
 
@@ -30,6 +31,7 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
   recomendacaoVisita,
   mesasLivres,
   capacidadeTotal,
+  reservaUrlQmesa,
   onClose,
 }) => {
   const router = useRouter();
@@ -132,6 +134,7 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
                           typeof mesasLivres === 'number' ? String(mesasLivres) : '',
                         capacidadeTotal:
                           typeof capacidadeTotal === 'number' ? String(capacidadeTotal) : '',
+                        reservaUrlQmesa: reservaUrlQmesa || '',
                       }
                     : {}),
                 },

@@ -29,7 +29,12 @@ import {
   buscarRestaurantesPorTexto,
   buscarRestaurantesProximos,
 } from '@/src/services/restauranteServices';
-import { listarLotacoesQmesa, listarMetricasQmesa, QmesaMetrica } from '@/src/services/qmesaPublicApi';
+import {
+  extrairLinkReservaQmesa,
+  listarLotacoesQmesa,
+  listarMetricasQmesa,
+  QmesaMetrica,
+} from '@/src/services/qmesaPublicApi';
 
 const { width } = Dimensions.get('window');
 const menuWidth = width * 0.7;
@@ -111,6 +116,7 @@ type Restaurante = {
   recomendacaoVisita?: string | null;
   mesasLivres?: number | null;
   capacidadeTotal?: number | null;
+  reservaUrlQmesa?: string | null;
 };
 
 function calcularLotacaoPercentual(item: {
@@ -170,7 +176,17 @@ export default function MapaComTudo() {
   // Ref tipada para liberar `animateToRegion` com segurança.
   const mapRef = useRef<MapView | null>(null);
   const router = useRouter();
-  const params = useLocalSearchParams<{ tipoCulinaria?: string; termoBusca?: string; raio?: string }>();
+  const params = useLocalSearchParams<{
+    tipoCulinaria?: string;
+    termoBusca?: string;
+    raio?: string;
+    rolePlaceId?: string;
+    roleNome?: string;
+    roleOrigemQmesa?: string;
+    roleLatitude?: string;
+    roleLongitude?: string;
+    roleReservaUrlQmesa?: string;
+  }>();
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
   const nomeUsuario = authUser?.displayName || authUser?.email || 'Usuário';
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -229,6 +245,10 @@ export default function MapaComTudo() {
     setMenuOpen(false);
     router.push('/screens/social' as never);
   };
+  const irParaRole = () => {
+    setMenuOpen(false);
+    router.push('/screens/role' as never);
+  };
   const irParaFeed = () => {
     setMenuOpen(false);
     router.push('/screens/feed' as never);
@@ -256,6 +276,26 @@ export default function MapaComTudo() {
     if (lot >= 75) return PIN_COLORS.alta;
     if (lot >= 40) return PIN_COLORS.media;
     return PIN_COLORS.baixa;
+  };
+
+  const montarRestauranteDoRole = (): Restaurante | null => {
+    if (!params.rolePlaceId || !params.roleLatitude || !params.roleLongitude) return null;
+
+    const latitude = Number(params.roleLatitude);
+    const longitude = Number(params.roleLongitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+    return {
+      id: params.rolePlaceId,
+      nome: params.roleNome || 'Restaurante do role',
+      tipo: params.roleOrigemQmesa === '1' ? 'Parceiro Qmesa' : 'Restaurante',
+      latitude,
+      longitude,
+      foto: null,
+      lotacao: null,
+      origemQmesa: params.roleOrigemQmesa === '1',
+      reservaUrlQmesa: params.roleReservaUrlQmesa || null,
+    };
   };
 
   const handleMapDrag = () => {
@@ -319,6 +359,30 @@ export default function MapaComTudo() {
   // buscarGooglePlaces le filtros via refs para evitar chamadas duplicadas durante digitacao/mudanca de raio.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroMapa, raioMapa, userLocation?.latitude, userLocation?.longitude]);
+
+  useEffect(() => {
+    const restauranteRole = montarRestauranteDoRole();
+    if (!restauranteRole) return;
+
+    setLugares((atuais) => {
+      if (atuais.some((item) => item.id === restauranteRole.id)) return atuais;
+      return [restauranteRole, ...atuais];
+    });
+    setLugarSelecionado((atual) => atual?.id === restauranteRole.id ? atual : restauranteRole);
+    moverMapaPara({
+      latitude: restauranteRole.latitude,
+      longitude: restauranteRole.longitude,
+    });
+  // montarRestauranteDoRole deriva apenas dos parametros listados abaixo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    params.roleLatitude,
+    params.roleLongitude,
+    params.roleNome,
+    params.roleOrigemQmesa,
+    params.rolePlaceId,
+    params.roleReservaUrlQmesa,
+  ]);
 
   useEffect(() => {
     (async () => {
@@ -435,7 +499,7 @@ export default function MapaComTudo() {
       }
 
       const restaurantesExternos: Restaurante[] = data
-        .filter((item) => item.google_place_id && item.latitude && item.longitude)
+        .filter((item) => item.google_place_id && item.latitude !== undefined && item.longitude !== undefined)
         .filter(estaAberto)
         .filter((item) => !item.nota_google || item.nota_google >= 3.5)
         .filter((item) => (filtro === 'mercado' ? itemEhMercado(item) : !itemEhMercado(item)))
@@ -466,7 +530,13 @@ export default function MapaComTudo() {
         `Lotacao carregada para ${totalComLotacao}/${restaurantesComLotacao.length} restaurantes.`,
       );
 
-      setLugares(restaurantesComLotacao);
+      const restauranteRole = montarRestauranteDoRole();
+      const restaurantesComRole =
+        restauranteRole && !restaurantesComLotacao.some((item) => item.id === restauranteRole.id)
+          ? [restauranteRole, ...restaurantesComLotacao]
+          : restaurantesComLotacao;
+
+      setLugares(restaurantesComRole);
     } catch (e) {
       console.error('Erro ao buscar lugares:', e);
     } finally {
@@ -510,20 +580,31 @@ export default function MapaComTudo() {
       }
 
       return porTexto
-        .map((item) => ({
-          id: item.restaurante_id,
-          nome: item.restaurante_nome,
-          tipo: 'Restaurante parceiro Qmesa',
-          latitude: item.latitude,
-          longitude: item.longitude,
-          foto: null,
-          lotacao: calcularLotacaoPercentual(item),
-          origemQmesa: true,
-          movimentoAtual: item.movimento_atual || null,
-          recomendacaoVisita: item.recomendacao_visita || null,
-          mesasLivres: item.mesas_livres ?? null,
-          capacidadeTotal: item.capacidade_total ?? null,
-        }));
+        .map((item) => {
+          const reservaUrlQmesa = extrairLinkReservaQmesa(item);
+          if (__DEV__ && reservaUrlQmesa) {
+            console.info('[Qmesa API] Link de reserva recebido no mapa:', {
+              restaurante_id: item.restaurante_id,
+              restaurante_nome: item.restaurante_nome,
+            });
+          }
+
+          return {
+            id: item.restaurante_id,
+            nome: item.restaurante_nome,
+            tipo: 'Restaurante parceiro Qmesa',
+            latitude: item.latitude,
+            longitude: item.longitude,
+            foto: null,
+            lotacao: calcularLotacaoPercentual(item),
+            origemQmesa: true,
+            movimentoAtual: item.movimento_atual || null,
+            recomendacaoVisita: item.recomendacao_visita || null,
+            mesasLivres: item.mesas_livres ?? null,
+            capacidadeTotal: item.capacidade_total ?? null,
+            reservaUrlQmesa,
+          };
+        });
     } catch (error) {
       console.warn('API Qmesa indisponivel, seguindo com busca padrao:', error);
       return [];
@@ -609,6 +690,7 @@ export default function MapaComTudo() {
             recomendacaoVisita={lugarSelecionado.recomendacaoVisita}
             mesasLivres={lugarSelecionado.mesasLivres}
             capacidadeTotal={lugarSelecionado.capacidadeTotal}
+            reservaUrlQmesa={lugarSelecionado.reservaUrlQmesa}
             onClose={() => setLugarSelecionado(null)}
           />
         </View>
@@ -760,6 +842,7 @@ export default function MapaComTudo() {
           <DrawerItem label="Favoritos" icon="favorite" onPress={irParaFavoritos} />
           <DrawerItem label="Reservas" icon="event-seat" onPress={irParaReservas} />
           <DrawerItem label="Eventos" icon="event" onPress={irParaSocial} />
+          <DrawerItem label="Role aleatorio" icon="casino" onPress={irParaRole} />
           <DrawerItem label="Fechar app" icon="exit-to-app" onPress={fecharApp} />
         </View>
       </Animated.View>

@@ -14,7 +14,8 @@ import {
 } from 'react-native';
 
 import ModalReserva from '../components/reserva_usuario';
-import { auth } from '@/firebaseconfig';
+import { auth, db } from '@/firebaseconfig';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import {
   adicionarFavorito,
   removerFavorito,
@@ -28,6 +29,7 @@ import {
   consultarCardapioQmesa,
   consultarFilaQmesa,
   consultarLotacaoQmesa,
+  extrairLinkReservaQmesa,
   QmesaCardapioItem,
 } from '@/src/services/qmesaPublicApi';
 
@@ -93,6 +95,7 @@ export default function Restaurante() {
     recomendacaoVisita,
     mesasLivres,
     capacidadeTotal,
+    reservaUrlQmesa,
   } = useLocalSearchParams<{
     placeId: string;
     lotacao?: string;
@@ -103,6 +106,7 @@ export default function Restaurante() {
     recomendacaoVisita?: string;
     mesasLivres?: string;
     capacidadeTotal?: string;
+    reservaUrlQmesa?: string;
   }>();
   const router = useRouter();
   const lotacaoRecebida = lotacao !== undefined ? Number(lotacao) : null;
@@ -110,6 +114,9 @@ export default function Restaurante() {
   const restauranteQmesa = origemQmesa === '1';
   const mesasLivresQmesa = Number(mesasLivres);
   const capacidadeQmesa = Number(capacidadeTotal);
+  const linkReservaQmesaParam = typeof reservaUrlQmesa === 'string' && reservaUrlQmesa.trim()
+    ? reservaUrlQmesa.trim()
+    : null;
 
   const [detalhes, setDetalhes] = useState<RestauranteDetalhes | null>(null);
   const [lotacaoPercentual, setLotacaoPercentual] = useState<number | null>(
@@ -119,6 +126,7 @@ export default function Restaurante() {
   const [modalVisible, setModalVisible] = useState(false);
   const [favoritado, setFavoritado] = useState(false);
   const [cardapioQmesa, setCardapioQmesa] = useState<QmesaCardapioItem[]>([]);
+  const [reservaUrlQmesaApi, setReservaUrlQmesaApi] = useState<string | null>(linkReservaQmesaParam);
   const [cardapioLoading, setCardapioLoading] = useState(false);
   const [filaQmesa, setFilaQmesa] = useState<{
     total_na_fila: number | null;
@@ -127,6 +135,7 @@ export default function Restaurante() {
   } | null>(null);
 
   const user = auth.currentUser;
+  const linkReservaQmesa = linkReservaQmesaParam || reservaUrlQmesaApi;
 
   const buscarDetalhesDoLugar = useCallback(async () => {
     if (!placeId) {
@@ -206,6 +215,19 @@ export default function Restaurante() {
 
         if (typeof lotacaoAtual?.percentual_ocupacao === 'number') {
           setLotacaoPercentual(Math.max(0, Math.min(100, Math.round(lotacaoAtual.percentual_ocupacao))));
+        }
+
+        if (lotacaoAtual) {
+          const linkRecebido = extrairLinkReservaQmesa(lotacaoAtual);
+          if (linkRecebido) {
+            if (__DEV__) {
+              console.info('[Qmesa API] Link de reserva recebido nos detalhes:', {
+                restaurante_id: lotacaoAtual.restaurante_id,
+                restaurante_nome: lotacaoAtual.restaurante_nome,
+              });
+            }
+            setReservaUrlQmesaApi(linkRecebido);
+          }
         }
       })
       .finally(() => {
@@ -310,6 +332,45 @@ export default function Restaurante() {
     if (lot > 80) return '30-50 min';
     if (lot >= 40) return '15-30 min';
     return '5-15 min';
+  };
+
+  const abrirReservaQmesa = async () => {
+    if (!linkReservaQmesa) {
+      Alert.alert('Reserva Qmesa indisponivel', 'Este parceiro ainda nao enviou o link de reserva.');
+      return;
+    }
+
+    const podeAbrir = await Linking.canOpenURL(linkReservaQmesa);
+    if (!podeAbrir) {
+      Alert.alert('Erro', 'Nao foi possivel abrir o link de reserva Qmesa.');
+      return;
+    }
+
+    try {
+      await Linking.openURL(linkReservaQmesa);
+
+      if (user && placeId) {
+        await addDoc(collection(db, 'reservas'), {
+          userId: user.uid,
+          placeId,
+          restauranteNome: detalhes?.nome || nome || 'Restaurante Qmesa',
+          cidade: 'qmesa',
+          capacidadeMaxima: Number.isFinite(capacidadeQmesa) ? capacidadeQmesa : 0,
+          telefoneRestaurante: '',
+          numPessoas: null,
+          data: '',
+          hora: '',
+          status: 'solicitada_qmesa_link',
+          origem: 'qmesa',
+          linkReservaQmesa,
+          criadoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp(),
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao abrir reserva Qmesa:', error);
+      Alert.alert('Erro', 'Nao foi possivel enviar para o sistema Qmesa.');
+    }
   };
 
   const calcularPessoasNaFila = (lot: number): string => {
@@ -573,15 +634,24 @@ export default function Restaurante() {
               <View style={styles.reservationHeaderText}>
                 <Text style={styles.sectionTitle}>Reserva</Text>
                 <Text style={styles.reservationSubtitle}>
-                  Escolha data, horario e quantidade antes de abrir o WhatsApp.
+                  {restauranteQmesa && linkReservaQmesa
+                    ? 'Finalize a reserva diretamente no sistema Qmesa do parceiro.'
+                    : 'Escolha data, horario e quantidade antes de abrir o WhatsApp.'}
                 </Text>
               </View>
               <MaterialIcons name="event-available" size={28} color={BLUE_DARK} />
             </View>
 
-            <TouchableOpacity style={styles.primaryButton} onPress={() => setModalVisible(true)}>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={restauranteQmesa && linkReservaQmesa ? abrirReservaQmesa : () => setModalVisible(true)}
+            >
               <MaterialIcons name="calendar-month" size={19} color="#FFFFFF" />
-              <Text style={styles.primaryButtonText}>Escolher data e horario</Text>
+              <Text style={styles.primaryButtonText}>
+                {restauranteQmesa && linkReservaQmesa
+                  ? 'Reservar pelo Qmesa'
+                  : 'Escolher data e horario'}
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.secondaryButton} onPress={() => irParaEvento()}>

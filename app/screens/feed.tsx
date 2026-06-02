@@ -38,6 +38,14 @@ import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService'
 import { avatarFallback, formatarDataCurta } from '@/src/services/socialServices';
 import { isValidEmail, normalizeEmail } from '@/src/utils/validation';
 
+function normalizarBuscaUsuario(valor: string) {
+  return valor
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
 type Amigo = {
   uid: string;
   nome: string;
@@ -179,41 +187,69 @@ export default function Feed() {
     return () => unsubscribe();
   }, [friendIds, usuario]);
 
-  const buscarUsuarioPorEmail = async (email: string) => {
-    const buscaPorLower = await getDocs(
-      query(collection(db, 'usuarios'), where('emailLower', '==', email), limit(1)),
-    );
-    if (!buscaPorLower.empty) return buscaPorLower.docs[0];
+  const buscarUsuarioPorTermo = async (termo: string) => {
+    const termoNormalizado = normalizarBuscaUsuario(termo);
 
-    const buscaPorEmail = await getDocs(
-      query(collection(db, 'usuarios'), where('email', '==', email), limit(1)),
-    );
-    return buscaPorEmail.empty ? null : buscaPorEmail.docs[0];
+    if (isValidEmail(termoNormalizado)) {
+      const email = normalizeEmail(termoNormalizado);
+
+      const buscaPorLower = await getDocs(
+        query(collection(db, 'usuarios'), where('emailLower', '==', email), limit(1)),
+      );
+      if (!buscaPorLower.empty) return buscaPorLower.docs[0];
+
+      const buscaPorEmail = await getDocs(
+        query(collection(db, 'usuarios'), where('email', '==', email), limit(1)),
+      );
+      return buscaPorEmail.empty ? null : buscaPorEmail.docs[0];
+    }
+
+    const usuariosSnapshot = await getDocs(query(collection(db, 'usuarios'), limit(100)));
+    const encontrados = usuariosSnapshot.docs.filter((documento) => {
+      const dados = documento.data();
+      const nome = normalizarBuscaUsuario(String(dados.nome || ''));
+      const email = normalizarBuscaUsuario(String(dados.email || ''));
+
+      return nome.includes(termoNormalizado) || email.includes(termoNormalizado);
+    });
+
+    return encontrados[0] || null;
   };
 
   const enviarPedidoAmizade = async () => {
     if (!usuario) return;
 
-    const email = normalizeEmail(novoAmigoEmail);
-    if (!email) {
-      Alert.alert('Informe um email', 'Digite o email de alguem cadastrado no app.');
+    const termoBusca = novoAmigoEmail.trim();
+    const termoNormalizado = normalizarBuscaUsuario(termoBusca);
+    const pareceEmail = termoBusca.includes('@');
+
+    if (!termoBusca) {
+      Alert.alert('Informe um usuario', 'Digite o nome ou email de alguem cadastrado no app.');
       return;
     }
-    if (!isValidEmail(email)) {
+    if (pareceEmail && !isValidEmail(normalizeEmail(termoBusca))) {
       Alert.alert('Email invalido', 'Digite um email valido para adicionar um amigo.');
       return;
     }
 
-    if (email === usuario.email?.toLowerCase()) {
-      Alert.alert('Esse e voce', 'Use o email de outra pessoa.');
+    if (
+      termoNormalizado === normalizarBuscaUsuario(usuario.email || '') ||
+      termoNormalizado === normalizarBuscaUsuario(usuario.displayName || '')
+    ) {
+      Alert.alert('Esse e voce', 'Use o nome ou email de outra pessoa.');
       return;
     }
 
     setEnviandoPedido(true);
     try {
-      const encontrado = await buscarUsuarioPorEmail(email);
+      const encontrado = await buscarUsuarioPorTermo(termoBusca);
       if (!encontrado) {
-        Alert.alert('Nao encontrado', 'Nenhum usuario cadastrado com esse email.');
+        Alert.alert('Nao encontrado', 'Nenhum usuario cadastrado com esse nome ou email.');
+        return;
+      }
+
+      if (encontrado.id === usuario.uid) {
+        Alert.alert('Esse e voce', 'Use o nome ou email de outra pessoa.');
         return;
       }
 
@@ -230,7 +266,7 @@ export default function Feed() {
         fromFoto: usuario.photoURL || null,
         toUid: encontrado.id,
         toNome: String(dados.nome || dados.email || 'Usuario'),
-        toEmail: String(dados.email || email).toLowerCase(),
+        toEmail: String(dados.email || termoBusca).toLowerCase(),
         toFoto: typeof dados.fotoUrl === 'string' ? dados.fotoUrl : null,
         status: 'pendente',
         criadoEm: serverTimestamp(),
@@ -346,10 +382,10 @@ export default function Feed() {
                 style={styles.friendInput}
                 value={novoAmigoEmail}
                 onChangeText={setNovoAmigoEmail}
-                placeholder="email do amigo"
+                placeholder="nome ou email do amigo"
                 placeholderTextColor="#667085"
-                keyboardType="email-address"
-                autoCapitalize="none"
+                keyboardType="default"
+                autoCapitalize="words"
                 editable={!enviandoPedido}
               />
               <TouchableOpacity

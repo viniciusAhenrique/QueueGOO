@@ -13,6 +13,7 @@ export interface RestauranteResumo {
   tipos?: string[];
   distancia_metros?: number;
   origem_qmesa?: boolean;
+  reserva_url_qmesa?: string | null;
   movimento_atual?: string | null;
   recomendacao_visita?: string | null;
   mesas_livres?: number | null;

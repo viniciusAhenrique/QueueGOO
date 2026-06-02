@@ -45,6 +45,14 @@ import {
 } from '@/src/services/restauranteServices';
 import { isValidEmail, normalizeEmail, splitValidEmails } from '@/src/utils/validation';
 
+function normalizarBuscaUsuario(valor: string) {
+  return valor
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
 type Comentario = {
   id: string;
   uid: string;
@@ -305,40 +313,66 @@ export default function Social() {
   const adicionarAmigo = async () => {
     if (!user) return;
 
-    const email = normalizeEmail(novoAmigoEmail);
-    if (!email) {
-      Alert.alert('Informe um email', 'Digite o email de alguem cadastrado no app.');
+    const termoBusca = novoAmigoEmail.trim();
+    const termoNormalizado = normalizarBuscaUsuario(termoBusca);
+    const pareceEmail = termoBusca.includes('@');
+
+    if (!termoBusca) {
+      Alert.alert('Informe um usuario', 'Digite o nome ou email de alguem cadastrado no app.');
       return;
     }
-    if (!isValidEmail(email)) {
+    if (pareceEmail && !isValidEmail(normalizeEmail(termoBusca))) {
       Alert.alert('Email invalido', 'Digite um email valido para adicionar um amigo.');
       return;
     }
 
-    if (email === emailUsuario) {
+    if (
+      termoNormalizado === normalizarBuscaUsuario(emailUsuario) ||
+      termoNormalizado === normalizarBuscaUsuario(user.displayName || '')
+    ) {
       Alert.alert('Calma ai', 'Voce ja esta no app como voce mesmo.');
       return;
     }
 
     try {
-      const buscaPorLower = await getDocs(
-        query(collection(db, 'usuarios'), where('emailLower', '==', email), limit(1)),
-      );
-      const buscaPorEmail = buscaPorLower.empty
-        ? await getDocs(query(collection(db, 'usuarios'), where('email', '==', email), limit(1)))
-        : buscaPorLower;
+      let documento = null;
 
-      if (buscaPorEmail.empty) {
-        Alert.alert('Nao encontrado', 'Nenhum usuario cadastrado com esse email.');
+      if (isValidEmail(normalizeEmail(termoBusca))) {
+        const email = normalizeEmail(termoBusca);
+        const buscaPorLower = await getDocs(
+          query(collection(db, 'usuarios'), where('emailLower', '==', email), limit(1)),
+        );
+        const buscaPorEmail = buscaPorLower.empty
+          ? await getDocs(query(collection(db, 'usuarios'), where('email', '==', email), limit(1)))
+          : buscaPorLower;
+
+        documento = buscaPorEmail.empty ? null : buscaPorEmail.docs[0];
+      } else {
+        const usuariosSnapshot = await getDocs(query(collection(db, 'usuarios'), limit(100)));
+        documento = usuariosSnapshot.docs.find((docUsuario) => {
+          const dadosUsuario = docUsuario.data();
+          const nome = normalizarBuscaUsuario(String(dadosUsuario.nome || ''));
+          const emailUsuarioEncontrado = normalizarBuscaUsuario(String(dadosUsuario.email || ''));
+
+          return nome.includes(termoNormalizado) || emailUsuarioEncontrado.includes(termoNormalizado);
+        }) || null;
+      }
+
+      if (!documento) {
+        Alert.alert('Nao encontrado', 'Nenhum usuario cadastrado com esse nome ou email.');
         return;
       }
 
-      const documento = buscaPorEmail.docs[0];
+      if (documento.id === user.uid) {
+        Alert.alert('Calma ai', 'Voce ja esta no app como voce mesmo.');
+        return;
+      }
+
       const dados = documento.data();
       const amigo: Amigo = {
         uid: documento.id,
         nome: String(dados.nome || dados.email || 'Amigo'),
-        email: String(dados.email || email).toLowerCase(),
+        email: String(dados.email || termoBusca).toLowerCase(),
         fotoUrl: typeof dados.fotoUrl === 'string' ? dados.fotoUrl : null,
       };
 
@@ -837,10 +871,10 @@ export default function Social() {
                 style={styles.friendInput}
                 value={novoAmigoEmail}
                 onChangeText={setNovoAmigoEmail}
-                placeholder="email do amigo"
+                placeholder="nome ou email do amigo"
                 placeholderTextColor="#667085"
-                autoCapitalize="none"
-                keyboardType="email-address"
+                autoCapitalize="words"
+                keyboardType="default"
               />
               <TouchableOpacity style={styles.friendAddButton} onPress={adicionarAmigo}>
                 <MaterialIcons name="person-add" size={20} color="#FFFFFF" />

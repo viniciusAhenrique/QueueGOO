@@ -6,12 +6,20 @@ export interface QmesaRestaurante {
   id: string;
   nome: string;
   capacidade: number | null;
+  link_reserva?: string | null;
+  reserva_url?: string | null;
+  url_reserva?: string | null;
+  link_qmesa?: string | null;
 }
 
 export interface QmesaLotacao {
   restaurante_id: string;
   restaurante_nome: string;
   restaurante_cnpj?: string | null;
+  link_reserva?: string | null;
+  reserva_url?: string | null;
+  url_reserva?: string | null;
+  link_qmesa?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   capacidade_total: number | null;
@@ -80,6 +88,22 @@ export interface QmesaCardapioItem {
   preco?: number | string | null;
   categoria?: string | null;
   imagem_url?: string | null;
+}
+
+export function extrairLinkReservaQmesa(item: {
+  link_reserva?: string | null;
+  reserva_url?: string | null;
+  url_reserva?: string | null;
+  link_qmesa?: string | null;
+}) {
+  const link = item.link_reserva || item.reserva_url || item.url_reserva || item.link_qmesa || null;
+  if (!link) return null;
+
+  const linkLimpo = link.trim();
+  if (!linkLimpo) return null;
+
+  if (/^https?:\/\//i.test(linkLimpo)) return linkLimpo;
+  return `https://${linkLimpo}`;
 }
 
 async function qmesaFetch<T>(view: string, params: Record<string, SupabaseFilterValue>) {
