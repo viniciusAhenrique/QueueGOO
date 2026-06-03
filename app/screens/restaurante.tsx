@@ -29,6 +29,7 @@ import {
   consultarCardapioQmesa,
   consultarFilaQmesa,
   consultarLotacaoQmesa,
+  consultarRestauranteQmesa,
   extrairLinkReservaQmesa,
   QmesaCardapioItem,
 } from '@/src/services/qmesaPublicApi';
@@ -207,8 +208,12 @@ export default function Restaurante() {
         console.warn('Lotacao Qmesa indisponivel nos detalhes:', error);
         return null;
       }),
+      consultarRestauranteQmesa(placeId).catch((error) => {
+        console.warn('Restaurante Qmesa indisponivel nos detalhes:', error);
+        return null;
+      }),
     ])
-      .then(([cardapio, fila, lotacaoAtual]) => {
+      .then(([cardapio, fila, lotacaoAtual, restauranteAtual]) => {
         if (!ativo) return;
         setCardapioQmesa(cardapio);
         setFilaQmesa(fila);
@@ -224,6 +229,19 @@ export default function Restaurante() {
               console.info('[Qmesa API] Link de reserva recebido nos detalhes:', {
                 restaurante_id: lotacaoAtual.restaurante_id,
                 restaurante_nome: lotacaoAtual.restaurante_nome,
+              });
+            }
+            setReservaUrlQmesaApi(linkRecebido);
+          }
+        }
+
+        if (restauranteAtual) {
+          const linkRecebido = extrairLinkReservaQmesa(restauranteAtual);
+          if (linkRecebido) {
+            if (__DEV__) {
+              console.info('[Qmesa API] Link de reserva recebido em api_v_restaurantes:', {
+                restaurante_id: restauranteAtual.id,
+                restaurante_nome: restauranteAtual.nome,
               });
             }
             setReservaUrlQmesaApi(linkRecebido);
@@ -634,7 +652,7 @@ export default function Restaurante() {
               <View style={styles.reservationHeaderText}>
                 <Text style={styles.sectionTitle}>Reserva</Text>
                 <Text style={styles.reservationSubtitle}>
-                  {restauranteQmesa && linkReservaQmesa
+                  {restauranteQmesa
                     ? 'Finalize a reserva diretamente no sistema Qmesa do parceiro.'
                     : 'Escolha data, horario e quantidade antes de abrir o WhatsApp.'}
                 </Text>
@@ -644,11 +662,11 @@ export default function Restaurante() {
 
             <TouchableOpacity
               style={styles.primaryButton}
-              onPress={restauranteQmesa && linkReservaQmesa ? abrirReservaQmesa : () => setModalVisible(true)}
+              onPress={restauranteQmesa ? abrirReservaQmesa : () => setModalVisible(true)}
             >
               <MaterialIcons name="calendar-month" size={19} color="#FFFFFF" />
               <Text style={styles.primaryButtonText}>
-                {restauranteQmesa && linkReservaQmesa
+                {restauranteQmesa
                   ? 'Reservar pelo Qmesa'
                   : 'Escolher data e horario'}
               </Text>
@@ -720,16 +738,18 @@ export default function Restaurante() {
         </View>
       </ScrollView>
 
-      <ModalReserva
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onCriarEvento={({ pessoas, data }) => irParaEvento(pessoas, data)}
-        placeId={placeId}
-        nomeRestaurante={detalhes.nome}
-        cidade="pinhais"
-        capacidadeMaxima={100}
-        telefoneRestaurante={detalhes.telefone || ''}
-      />
+      {!restauranteQmesa && (
+        <ModalReserva
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          onCriarEvento={({ pessoas, data }) => irParaEvento(pessoas, data)}
+          placeId={placeId}
+          nomeRestaurante={detalhes.nome}
+          cidade="pinhais"
+          capacidadeMaxima={100}
+          telefoneRestaurante={detalhes.telefone || ''}
+        />
+      )}
     </>
   );
 }

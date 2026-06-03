@@ -7,9 +7,14 @@ export interface QmesaRestaurante {
   nome: string;
   capacidade: number | null;
   link_reserva?: string | null;
+  link_reservas?: string | null;
+  reserva_link?: string | null;
   reserva_url?: string | null;
   url_reserva?: string | null;
+  url_reservas?: string | null;
   link_qmesa?: string | null;
+  url_qmesa?: string | null;
+  booking_url?: string | null;
 }
 
 export interface QmesaLotacao {
@@ -17,9 +22,14 @@ export interface QmesaLotacao {
   restaurante_nome: string;
   restaurante_cnpj?: string | null;
   link_reserva?: string | null;
+  link_reservas?: string | null;
+  reserva_link?: string | null;
   reserva_url?: string | null;
   url_reserva?: string | null;
+  url_reservas?: string | null;
   link_qmesa?: string | null;
+  url_qmesa?: string | null;
+  booking_url?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   capacidade_total: number | null;
@@ -92,11 +102,26 @@ export interface QmesaCardapioItem {
 
 export function extrairLinkReservaQmesa(item: {
   link_reserva?: string | null;
+  link_reservas?: string | null;
+  reserva_link?: string | null;
   reserva_url?: string | null;
   url_reserva?: string | null;
+  url_reservas?: string | null;
   link_qmesa?: string | null;
+  url_qmesa?: string | null;
+  booking_url?: string | null;
 }) {
-  const link = item.link_reserva || item.reserva_url || item.url_reserva || item.link_qmesa || null;
+  const link =
+    item.link_reserva ||
+    item.link_reservas ||
+    item.reserva_link ||
+    item.reserva_url ||
+    item.url_reserva ||
+    item.url_reservas ||
+    item.link_qmesa ||
+    item.url_qmesa ||
+    item.booking_url ||
+    null;
   if (!link) return null;
 
   const linkLimpo = link.trim();
@@ -152,6 +177,15 @@ export function listarRestaurantesQmesa() {
     select: '*',
     order: 'nome.asc',
   });
+}
+
+export async function consultarRestauranteQmesa(restauranteId: string) {
+  const dados = await qmesaFetch<QmesaRestaurante[]>('api_v_restaurantes', {
+    select: '*',
+    id: `eq.${restauranteId}`,
+  });
+
+  return dados[0] || null;
 }
 
 export function listarMetricasQmesa() {
