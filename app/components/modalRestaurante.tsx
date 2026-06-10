@@ -134,9 +134,10 @@ const BalaoRestaurante: React.FC<BalaoRestauranteProps> = ({
                           typeof mesasLivres === 'number' ? String(mesasLivres) : '',
                         capacidadeTotal:
                           typeof capacidadeTotal === 'number' ? String(capacidadeTotal) : '',
+                        fotoUrl: foto || '',
                         reservaUrlQmesa: reservaUrlQmesa || '',
                       }
-                    : {}),
+                    : foto ? { fotoUrl: foto } : {}),
                 },
               });
             }}

@@ -7,6 +7,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -65,6 +66,7 @@ type RestauranteSorteado = {
   nome: string;
   endereco?: string;
   origem: 'QueueGOO' | 'Qmesa';
+  fotoUrl?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   distanciaMetros?: number | null;
@@ -123,6 +125,10 @@ function resumirCardapio(cardapio: QmesaCardapioItem[]) {
     .filter((item) => item.nome)
     .slice(0, 3)
     .map((item) => item.nome);
+}
+
+function primeiraImagemCardapio(cardapio: QmesaCardapioItem[]) {
+  return cardapio.find((item) => item.imagem_url)?.imagem_url || null;
 }
 
 export default function RoleScreen() {
@@ -318,6 +324,7 @@ export default function RoleScreen() {
         nome: item.nome,
         endereco: item.endereco,
         origem: 'QueueGOO',
+        fotoUrl: item.foto_url || null,
         latitude: item.latitude,
         longitude: item.longitude,
         distanciaMetros: item.distancia_metros ?? null,
@@ -348,12 +355,14 @@ export default function RoleScreen() {
       qmesaProximos.map(async ({ item, distancia }) => {
         const cardapio = await consultarCardapioQmesa(item.restaurante_id).catch(() => []);
         const preview = resumirCardapio(cardapio);
+        const fotoUrl = primeiraImagemCardapio(cardapio);
 
         return {
           id: item.restaurante_id,
           nome: item.restaurante_nome,
           endereco: 'Parceiro Qmesa com dados ao vivo',
           origem: 'Qmesa' as const,
+          fotoUrl,
           latitude: item.latitude,
           longitude: item.longitude,
           distanciaMetros: distancia,
@@ -462,6 +471,7 @@ export default function RoleScreen() {
         roleOrigemQmesa: restaurante.origem === 'Qmesa' ? '1' : '0',
         roleLatitude: String(restaurante.latitude),
         roleLongitude: String(restaurante.longitude),
+        roleFotoUrl: restaurante.fotoUrl || '',
         roleReservaUrlQmesa: restaurante.reservaUrlQmesa || '',
       },
     } as never);
@@ -478,9 +488,33 @@ export default function RoleScreen() {
         nome: restaurante.nome,
         tipo: restaurante.origem === 'Qmesa' ? 'Restaurante parceiro Qmesa' : 'Restaurante',
         origemQmesa: restaurante.origem === 'Qmesa' ? '1' : '0',
+        fotoUrl: restaurante.fotoUrl || undefined,
         reservaUrlQmesa: restaurante.reservaUrlQmesa || undefined,
       },
     } as never);
+  };
+
+  const reservarRestauranteSorteado = async () => {
+    const restaurante = grupoSelecionado?.restauranteSorteado;
+    if (!restaurante) return;
+
+    if (restaurante.origem === 'Qmesa') {
+      if (!restaurante.reservaUrlQmesa) {
+        Alert.alert('Reserva indisponivel', 'Este parceiro Qmesa ainda nao enviou link de reserva.');
+        return;
+      }
+
+      const podeAbrir = await Linking.canOpenURL(restaurante.reservaUrlQmesa);
+      if (!podeAbrir) {
+        Alert.alert('Erro', 'Nao foi possivel abrir o link de reserva Qmesa.');
+        return;
+      }
+
+      await Linking.openURL(restaurante.reservaUrlQmesa);
+      return;
+    }
+
+    abrirRestauranteDetalhes();
   };
 
   if (!user) {
@@ -586,7 +620,16 @@ export default function RoleScreen() {
 
                 {grupoSelecionado.restauranteSorteado ? (
                   <View style={styles.winnerBox}>
-                    <MaterialIcons name="casino" size={22} color="#B7791F" />
+                    {grupoSelecionado.restauranteSorteado.fotoUrl ? (
+                      <Image
+                        source={{ uri: grupoSelecionado.restauranteSorteado.fotoUrl }}
+                        style={styles.winnerImage}
+                      />
+                    ) : (
+                      <View style={styles.winnerImageFallback}>
+                        <MaterialIcons name="casino" size={24} color="#B7791F" />
+                      </View>
+                    )}
                     <View style={styles.winnerTextArea}>
                       <Text style={styles.winnerLabel}>Restaurante sorteado</Text>
                       <Text style={styles.winnerName}>{grupoSelecionado.restauranteSorteado.nome}</Text>
@@ -619,6 +662,10 @@ export default function RoleScreen() {
                               ? 'Ver cardapio'
                               : 'Ver detalhes'}
                           </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.winnerActionButton} onPress={reservarRestauranteSorteado}>
+                          <MaterialIcons name="event-available" size={17} color={BLUE_DARK} />
+                          <Text style={styles.winnerActionText}>Reservar</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -831,6 +878,20 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   winnerTextArea: { flex: 1 },
+  winnerImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 8,
+    backgroundColor: '#FFE7BA',
+  },
+  winnerImageFallback: {
+    width: 72,
+    height: 72,
+    borderRadius: 8,
+    backgroundColor: '#FFE7BA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   winnerLabel: { color: '#7A3E00', fontSize: 12, fontFamily: 'Urbanist_700Bold' },
   winnerName: { color: INK, fontSize: 17, fontFamily: 'Poppins_700Bold', marginTop: 2 },
   winnerMeta: { color: '#7A3E00', fontSize: 12, lineHeight: 17, marginTop: 2 },

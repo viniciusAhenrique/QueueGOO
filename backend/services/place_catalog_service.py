@@ -156,6 +156,7 @@ async def buscar_detalhes(place_id: str) -> dict | None:
                 detalhes["fotos_externas"] = fotos
                 if not detalhes.get("foto_url") and fotos:
                     detalhes["foto_url"] = fotos[0].get("url")
+                    _salvar_foto_catalogo(item, detalhes["foto_url"])
         except Exception as exc:
             print(f"[tripadvisor] enriquecimento ignorado: {exc}")
 
@@ -517,6 +518,22 @@ def _executar(query) -> list[dict]:
     except Exception as exc:
         print(f"[place_catalog] consulta ignorada: {exc}")
         return []
+
+
+def _salvar_foto_catalogo(item: dict, foto_url: str | None) -> None:
+    if not foto_url or not item.get("id"):
+        return
+
+    try:
+        (
+            get_supabase()
+            .table("place_catalogo")
+            .update({"foto_url": foto_url})
+            .eq("id", item["id"])
+            .execute()
+        )
+    except Exception as exc:
+        print(f"[place_catalog] cache de foto ignorado: {exc}")
 
 
 def _formatar_restaurante(item: dict) -> dict:

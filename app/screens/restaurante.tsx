@@ -96,6 +96,7 @@ export default function Restaurante() {
     recomendacaoVisita,
     mesasLivres,
     capacidadeTotal,
+    fotoUrl,
     reservaUrlQmesa,
   } = useLocalSearchParams<{
     placeId: string;
@@ -107,6 +108,7 @@ export default function Restaurante() {
     recomendacaoVisita?: string;
     mesasLivres?: string;
     capacidadeTotal?: string;
+    fotoUrl?: string;
     reservaUrlQmesa?: string;
   }>();
   const router = useRouter();
@@ -117,6 +119,9 @@ export default function Restaurante() {
   const capacidadeQmesa = Number(capacidadeTotal);
   const linkReservaQmesaParam = typeof reservaUrlQmesa === 'string' && reservaUrlQmesa.trim()
     ? reservaUrlQmesa.trim()
+    : null;
+  const fotoUrlParam = typeof fotoUrl === 'string' && fotoUrl.trim()
+    ? fotoUrl.trim()
     : null;
 
   const [detalhes, setDetalhes] = useState<RestauranteDetalhes | null>(null);
@@ -147,6 +152,7 @@ export default function Restaurante() {
     if (restauranteQmesa) {
       setDetalhes({
         nome: nome || 'Restaurante Qmesa',
+        foto_url: fotoUrlParam,
         tipos: [tipo || 'Restaurante parceiro Qmesa'],
         geoapify_extras: {
           capacidade: Number.isFinite(capacidadeQmesa) ? capacidadeQmesa : undefined,
@@ -159,7 +165,10 @@ export default function Restaurante() {
     try {
       const data = await buscarDetalhesRestaurante(placeId);
       if (data) {
-        setDetalhes(data);
+        setDetalhes({
+          ...data,
+          foto_url: data.foto_url || fotoUrlParam || null,
+        });
       } else {
         Alert.alert('Erro', 'Informacoes do restaurante nao encontradas.');
       }
@@ -169,7 +178,7 @@ export default function Restaurante() {
     } finally {
       setLoading(false);
     }
-  }, [capacidadeQmesa, nome, placeId, restauranteQmesa, tipo]);
+  }, [capacidadeQmesa, fotoUrlParam, nome, placeId, restauranteQmesa, tipo]);
 
   useEffect(() => {
     buscarDetalhesDoLugar();

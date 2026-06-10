@@ -164,33 +164,32 @@ async def _buscar_google_restaurantes_proximos(lat: float, lng: float, raio_metr
 
 async def buscar_detalhes_por_place_id(place_id: str) -> dict | None:
     dados_catalogo = await place_catalog_service.buscar_detalhes(place_id)
-    if dados_catalogo or not GOOGLE_PLACES_FALLBACK_ENABLED:
+    if dados_catalogo:
+        if not dados_catalogo.get("foto_url") and GOOGLE_PLACES_FALLBACK_ENABLED:
+            try:
+                google_place_id = dados_catalogo.get("google_place_id") or place_id
+                dados_google = await _buscar_place_details(google_place_id)
+                if dados_google:
+                    resultado_google = _formatar_resultado_details(dados_google, google_place_id)
+                    place_catalog_service.salvar_resultados_google([resultado_google])
+                    dados_catalogo = {
+                        **dados_catalogo,
+                        "foto_url": resultado_google.get("foto_url") or dados_catalogo.get("foto_url"),
+                        "fotos_externas": dados_catalogo.get("fotos_externas") or [],
+                    }
+            except Exception as exc:
+                print(f"[google places] foto fallback ignorada: {exc}")
+
+        return dados_catalogo
+
+    if not GOOGLE_PLACES_FALLBACK_ENABLED:
         return dados_catalogo
 
     dados = await _buscar_place_details(place_id)
     if not dados:
         return None
 
-    fotos = dados.get("photos", [])
-    foto_ref = fotos[0].get("photo_reference") if fotos else None
-    location = dados.get("geometry", {}).get("location", {})
-
-    resultado = {
-        "google_place_id": place_id,
-        "nome": dados.get("name"),
-        "endereco": dados.get("formatted_address"),
-        "latitude": location.get("lat"),
-        "longitude": location.get("lng"),
-        "telefone": dados.get("formatted_phone_number"),
-        "site_url": dados.get("website"),
-        "google_maps_url": dados.get("url"),
-        "reservavel_google": dados.get("reservable"),
-        "tipos": dados.get("types", []),
-        "foto_url": _montar_url_foto(foto_ref) if foto_ref else None,
-        "horarios": dados.get("opening_hours", {}).get("weekday_text", []),
-        "nota_google": dados.get("rating"),
-        "total_avaliacoes_google": dados.get("user_ratings_total"),
-    }
+    resultado = _formatar_resultado_details(dados, place_id)
     place_catalog_service.salvar_resultados_google([resultado])
     return resultado
 
@@ -467,6 +466,29 @@ def _formatar_resultado_nearby(resultado: dict) -> dict:
         "foto_url":        _montar_url_foto(foto_ref) if foto_ref else None,
         "aberto_agora":    resultado.get("opening_hours", {}).get("open_now"),
         "tipos":           resultado.get("types", []),
+    }
+
+
+def _formatar_resultado_details(dados: dict, place_id: str | None = None) -> dict:
+    fotos = dados.get("photos", [])
+    foto_ref = fotos[0].get("photo_reference") if fotos else None
+    location = dados.get("geometry", {}).get("location", {})
+
+    return {
+        "google_place_id": place_id or dados.get("place_id"),
+        "nome": dados.get("name"),
+        "endereco": dados.get("formatted_address"),
+        "latitude": location.get("lat"),
+        "longitude": location.get("lng"),
+        "telefone": dados.get("formatted_phone_number"),
+        "site_url": dados.get("website"),
+        "google_maps_url": dados.get("url"),
+        "reservavel_google": dados.get("reservable"),
+        "tipos": dados.get("types", []),
+        "foto_url": _montar_url_foto(foto_ref) if foto_ref else None,
+        "horarios": dados.get("opening_hours", {}).get("weekday_text", []),
+        "nota_google": dados.get("rating"),
+        "total_avaliacoes_google": dados.get("user_ratings_total"),
     }
 
 

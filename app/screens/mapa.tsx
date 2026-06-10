@@ -242,6 +242,7 @@ export default function MapaComTudo() {
     roleOrigemQmesa?: string;
     roleLatitude?: string;
     roleLongitude?: string;
+    roleFotoUrl?: string;
     roleReservaUrlQmesa?: string;
   }>();
   const locationSubscription = useRef<Location.LocationSubscription | null>(null);
@@ -348,7 +349,7 @@ export default function MapaComTudo() {
       tipo: params.roleOrigemQmesa === '1' ? 'Parceiro Qmesa' : 'Restaurante',
       latitude,
       longitude,
-      foto: null,
+      foto: params.roleFotoUrl || null,
       lotacao: null,
       origemQmesa: params.roleOrigemQmesa === '1',
       reservaUrlQmesa: params.roleReservaUrlQmesa || null,
@@ -435,6 +436,7 @@ export default function MapaComTudo() {
   }, [
     params.roleLatitude,
     params.roleLongitude,
+    params.roleFotoUrl,
     params.roleNome,
     params.roleOrigemQmesa,
     params.rolePlaceId,
