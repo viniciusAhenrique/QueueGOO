@@ -185,7 +185,8 @@ export default function BuscarLayer() {
         (item): item is QmesaMetrica & { latitude: number; longitude: number } =>
           typeof item.latitude === 'number' && typeof item.longitude === 'number',
       );
-      const porTexto = comCoordenadas.filter((item) => {
+      const abertos = comCoordenadas.filter((item) => item.aberto_agora !== false);
+      const porTexto = abertos.filter((item) => {
         if (!termoNormalizado) return true;
         return textoNormalizado(item.restaurante_nome || '').includes(termoNormalizado);
       });
@@ -214,6 +215,7 @@ export default function BuscarLayer() {
         console.info('[Qmesa API] Filtro na tela de busca:', {
           recebidos: metricas.length,
           comCoordenadas: comCoordenadas.length,
+          abertos: abertos.length,
           exibidosSemFiltroDeRaio: porRestricao.length,
           termo,
           restricaoSelecionada,

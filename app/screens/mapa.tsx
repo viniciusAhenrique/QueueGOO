@@ -633,8 +633,9 @@ export default function MapaComTudo() {
         (item): item is QmesaMetrica & { latitude: number; longitude: number } =>
           typeof item.latitude === 'number' && typeof item.longitude === 'number',
       );
+      const abertos = comCoordenadas.filter((item) => item.aberto_agora !== false);
       const filtroDieta = obterFiltroDieta(filtro);
-      const porTexto = comCoordenadas.filter((item) => {
+      const porTexto = abertos.filter((item) => {
         if (!termo || filtro === 'restaurante' || filtroDieta) return true;
         return textoNormalizado(item.restaurante_nome || '').includes(termo);
       });
@@ -662,6 +663,7 @@ export default function MapaComTudo() {
         console.info('[Qmesa API] Filtro no mapa:', {
           recebidos: metricas.length,
           comCoordenadas: comCoordenadas.length,
+          abertos: abertos.length,
           exibidosSemFiltroDeRaio: porDieta.length,
           raioIgnoradoParaQmesa: raio,
           filtroDieta: filtroDieta?.valor || null,
