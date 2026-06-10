@@ -59,24 +59,28 @@ const restricoesAlimentares = [
     nome: 'Sem gluten',
     valor: 'sem-gluten',
     termoBusca: 'sem gluten gluten free',
+    termosBusca: ['sem gluten', 'gluten free', 'sem glúten'],
     palavras: ['sem gluten', 'gluten free', 'gluten-free', 'nao contem gluten'],
   },
   {
     nome: 'Sem lactose',
     valor: 'sem-lactose',
     termoBusca: 'sem lactose lactose free',
+    termosBusca: ['sem lactose', 'lactose free', 'zero lactose'],
     palavras: ['sem lactose', 'lactose free', 'zero lactose', 'nao contem lactose'],
   },
   {
     nome: 'Vegano',
     valor: 'vegano',
     termoBusca: 'vegano vegan',
+    termosBusca: ['vegano', 'vegan', 'plant based'],
     palavras: ['vegano', 'vegan', 'plant based', 'plant-based'],
   },
   {
     nome: 'Vegetariano',
     valor: 'vegetariano',
     termoBusca: 'vegetariano vegetarian',
+    termosBusca: ['vegetariano', 'vegetarian'],
     palavras: ['vegetariano', 'vegetarian'],
   },
 ];
@@ -105,6 +109,39 @@ function cardapioAtendeRestricao(texto: string, restricao: string) {
 
   const textoBase = textoNormalizado(texto);
   return filtro.palavras.some((palavra) => textoBase.includes(textoNormalizado(palavra)));
+}
+
+function deduplicarRestaurantes(restaurantes: RestauranteResumo[]) {
+  const vistos = new Set<string>();
+  return restaurantes.filter((restaurante) => {
+    const chave = restaurante.google_place_id || textoNormalizado(`${restaurante.nome}-${restaurante.latitude}-${restaurante.longitude}`);
+    if (vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+}
+
+async function buscarRestaurantesExternosComRestricao(
+  termoBase: string,
+  restricao: (typeof restricoesAlimentares)[number] | undefined,
+  localizacao: LocalizacaoCoords,
+  raioBusca: number,
+) {
+  if (!restricao) {
+    return termoBase
+      ? buscarRestaurantesPorTexto(termoBase, localizacao.latitude, localizacao.longitude, raioBusca)
+      : buscarRestaurantesProximos(localizacao.latitude, localizacao.longitude, raioBusca);
+  }
+
+  const termos = restricao.termosBusca.map((termoRestricao) =>
+    [termoBase, termoRestricao].filter(Boolean).join(' ').trim(),
+  );
+
+  const resultados = await Promise.all(
+    termos.map((termo) => buscarRestaurantesPorTexto(termo, localizacao.latitude, localizacao.longitude, raioBusca).catch(() => [])),
+  );
+
+  return deduplicarRestaurantes(resultados.flat());
 }
 
 function calcularDistanciaMetros(origem: LocalizacaoCoords, destino: LocalizacaoCoords) {
@@ -148,8 +185,7 @@ export default function BuscarLayer() {
         (item): item is QmesaMetrica & { latitude: number; longitude: number } =>
           typeof item.latitude === 'number' && typeof item.longitude === 'number',
       );
-      const abertos = comCoordenadas.filter((item) => item.aberto_agora !== false);
-      const porTexto = abertos.filter((item) => {
+      const porTexto = comCoordenadas.filter((item) => {
         if (!termoNormalizado) return true;
         return textoNormalizado(item.restaurante_nome || '').includes(termoNormalizado);
       });
@@ -168,6 +204,7 @@ export default function BuscarLayer() {
                 )
                 .join(' ');
 
+              if (!textoCardapio.trim()) return item;
               return cardapioAtendeRestricao(textoCardapio, restricaoSelecionada) ? item : null;
             }),
           )).filter((item): item is QmesaMetrica & { latitude: number; longitude: number } => Boolean(item))
@@ -177,7 +214,6 @@ export default function BuscarLayer() {
         console.info('[Qmesa API] Filtro na tela de busca:', {
           recebidos: metricas.length,
           comCoordenadas: comCoordenadas.length,
-          abertos: abertos.length,
           exibidosSemFiltroDeRaio: porRestricao.length,
           termo,
           restricaoSelecionada,
@@ -250,12 +286,9 @@ export default function BuscarLayer() {
             ? ''
             : categoriaSelecionada;
       const restricao = restricoesAlimentares.find((item) => item.valor === restricaoSelecionada);
-      const termoRestricao = restricao?.termoBusca || '';
-      const termo = [termoCategoria, searchQuery, termoRestricao].filter(Boolean).join(' ').trim();
+      const termo = [termoCategoria, searchQuery].filter(Boolean).join(' ').trim();
       const [data, restaurantesQmesa] = await Promise.all([
-        termo
-          ? buscarRestaurantesPorTexto(termo, localizacao.latitude, localizacao.longitude, raioBusca)
-          : buscarRestaurantesProximos(localizacao.latitude, localizacao.longitude, raioBusca),
+        buscarRestaurantesExternosComRestricao(termo, restricao, localizacao, raioBusca),
         categoriaSelecionada === 'supermarket' ? Promise.resolve([]) : buscarQmesa(searchQuery),
       ]);
 

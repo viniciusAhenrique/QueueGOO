@@ -171,6 +171,43 @@ function normalizarLotacao<T extends QmesaRawLotacao>(item: T): T & QmesaLotacao
   };
 }
 
+function pareceUuid(valor: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(valor);
+}
+
+function mesclarRestauranteComLotacao<T extends QmesaLotacao>(
+  restaurante: QmesaRestaurante,
+  lotacao: T | null,
+) {
+  return {
+    ...(lotacao || {}),
+    links: lotacao?.links || restaurante.links,
+    link_fila: lotacao?.link_fila || restaurante.link_fila,
+    link_reserva: lotacao?.link_reserva || restaurante.link_reserva,
+    link_reservas: lotacao?.link_reservas || restaurante.link_reservas,
+    reserva_link: lotacao?.reserva_link || restaurante.reserva_link,
+    reserva_url: lotacao?.reserva_url || restaurante.reserva_url,
+    url_reserva: lotacao?.url_reserva || restaurante.url_reserva,
+    url_reservas: lotacao?.url_reservas || restaurante.url_reservas,
+    link_qmesa: lotacao?.link_qmesa || restaurante.link_qmesa,
+    url_qmesa: lotacao?.url_qmesa || restaurante.url_qmesa,
+    booking_url: lotacao?.booking_url || restaurante.booking_url,
+    restaurante_id: lotacao?.restaurante_id || restaurante.id,
+    restaurante_slug: lotacao?.restaurante_slug || restaurante.slug,
+    restaurante_nome: lotacao?.restaurante_nome || restaurante.nome,
+    restaurante_cnpj: lotacao?.restaurante_cnpj || restaurante.cnpj,
+    latitude: lotacao?.latitude ?? restaurante.latitude ?? null,
+    longitude: lotacao?.longitude ?? restaurante.longitude ?? null,
+    capacidade_total: lotacao?.capacidade_total ?? restaurante.capacidade ?? null,
+    mesas_totais: lotacao?.mesas_totais ?? null,
+    mesas_ocupadas: lotacao?.mesas_ocupadas ?? null,
+    mesas_livres: lotacao?.mesas_livres ?? null,
+    ocupantes_atuais: lotacao?.ocupantes_atuais ?? null,
+    percentual_ocupacao: lotacao?.percentual_ocupacao ?? null,
+    atualizado_em: lotacao?.atualizado_em ?? null,
+  };
+}
+
 export function extrairLinkReservaQmesa(item: QmesaLinkavel) {
   const link =
     item.links?.reserva ||
@@ -236,8 +273,10 @@ async function qmesaFetch<T>(recurso: QmesaRecurso, params: Record<string, strin
   return dados as T;
 }
 
-function filtroRestaurante(restauranteId: string) {
-  return { restaurante_id: restauranteId };
+function filtroRestaurante(restauranteId: string): Record<string, string> {
+  return pareceUuid(restauranteId)
+    ? { restaurante_id: restauranteId }
+    : { slug: restauranteId };
 }
 
 export async function listarRestaurantesQmesa() {
@@ -251,13 +290,46 @@ export async function consultarRestauranteQmesa(restauranteId: string) {
 }
 
 export async function listarMetricasQmesa() {
-  const dados = await qmesaFetch<QmesaRawMetrica[]>('metricas');
-  return dados.map((item) => normalizarLotacao(item) as QmesaMetrica);
+  try {
+    const dados = await qmesaFetch<QmesaRawMetrica[]>('metricas');
+    return dados.map((item) => normalizarLotacao(item) as QmesaMetrica);
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[Qmesa API] Listagem de metricas exige restaurante; montando por restaurantes:', error);
+    }
+
+    const restaurantes = await listarRestaurantesQmesa();
+    const metricas = await Promise.all(
+      restaurantes.map(async (restaurante) => {
+        const dados = await qmesaFetch<QmesaRawMetrica[]>('metricas', filtroRestaurante(restaurante.id)).catch(() => []);
+        const metrica = dados.map((item) => normalizarLotacao(item) as QmesaMetrica)[0] || null;
+        return mesclarRestauranteComLotacao(restaurante, metrica) as QmesaMetrica;
+      }),
+    );
+
+    return metricas;
+  }
 }
 
 export async function listarLotacoesQmesa() {
-  const dados = await qmesaFetch<QmesaRawLotacao[]>('lotacao');
-  return dados.map(normalizarLotacao);
+  try {
+    const dados = await qmesaFetch<QmesaRawLotacao[]>('lotacao');
+    return dados.map(normalizarLotacao);
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[Qmesa API] Listagem de lotacao exige restaurante; montando por restaurantes:', error);
+    }
+
+    const restaurantes = await listarRestaurantesQmesa();
+    const lotacoes = await Promise.all(
+      restaurantes.map(async (restaurante) => {
+        const lotacao = await consultarLotacaoQmesa(restaurante.id).catch(() => null);
+        return mesclarRestauranteComLotacao(restaurante, lotacao);
+      }),
+    );
+
+    return lotacoes;
+  }
 }
 
 export async function consultarLotacaoQmesa(restauranteId: string) {

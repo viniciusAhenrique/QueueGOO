@@ -99,21 +99,25 @@ const DIETARY_FILTERS = [
   {
     valor: 'diet:sem-gluten',
     termoBusca: 'sem gluten gluten free',
+    termosBusca: ['sem gluten', 'gluten free', 'sem glúten'],
     palavras: ['sem gluten', 'gluten free', 'gluten-free', 'nao contem gluten'],
   },
   {
     valor: 'diet:sem-lactose',
     termoBusca: 'sem lactose lactose free',
+    termosBusca: ['sem lactose', 'lactose free', 'zero lactose'],
     palavras: ['sem lactose', 'lactose free', 'zero lactose', 'nao contem lactose'],
   },
   {
     valor: 'diet:vegano',
     termoBusca: 'vegano vegan',
+    termosBusca: ['vegano', 'vegan', 'plant based'],
     palavras: ['vegano', 'vegan', 'plant based', 'plant-based'],
   },
   {
     valor: 'vegetarian',
     termoBusca: 'vegetariano vegetarian',
+    termosBusca: ['vegetariano', 'vegetarian'],
     palavras: ['vegetariano', 'vegetarian'],
   },
 ];
@@ -203,6 +207,16 @@ function cardapioAtendeFiltroDieta(texto: string, filtro: string) {
 
   const textoBase = textoNormalizado(texto);
   return filtroDieta.palavras.some((palavra) => textoBase.includes(textoNormalizado(palavra)));
+}
+
+function deduplicarRestaurantesMapa(restaurantes: Restaurante[]) {
+  const vistos = new Set<string>();
+  return restaurantes.filter((restaurante) => {
+    const chave = restaurante.id || textoNormalizado(`${restaurante.nome}-${restaurante.latitude}-${restaurante.longitude}`);
+    if (vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
 }
 
 export default function MapaComTudo() {
@@ -519,10 +533,18 @@ export default function MapaComTudo() {
       const filtro = filtroMapaRef.current.trim();
       const raioAtual = raioMapaRef.current;
       const filtroDieta = obterFiltroDieta(filtro);
-      const termoBuscaExterna = filtroDieta?.termoBusca || filtro;
       const restaurantesQmesa = await buscarRestaurantesQmesa(latitude, longitude, raioAtual, filtro);
-      const dataInicial = termoBuscaExterna
-        ? await buscarRestaurantesPorTexto(termoBuscaExterna, latitude, longitude, raioAtual)
+      const buscasExternas = filtroDieta
+        ? await Promise.all(
+            filtroDieta.termosBusca.map((termo) =>
+              buscarRestaurantesPorTexto(termo, latitude, longitude, raioAtual).catch(() => []),
+            ),
+          )
+        : null;
+      const dataInicial = buscasExternas
+        ? buscasExternas.flat()
+        : filtro
+        ? await buscarRestaurantesPorTexto(filtro, latitude, longitude, raioAtual)
         : await buscarRestaurantesProximos(latitude, longitude, raioAtual);
       let data = dataInicial;
 
@@ -538,7 +560,7 @@ export default function MapaComTudo() {
           coordenadasDevTeste.latitude,
           coordenadasDevTeste.longitude,
           Math.max(raioAtual, 3000),
-          termoBuscaExterna || undefined,
+          (filtroDieta?.termosBusca[0] || filtro) || undefined,
         );
         moverMapaPara(coordenadasDevTeste);
       }
@@ -558,7 +580,10 @@ export default function MapaComTudo() {
           lotacao: null,
         }));
 
-      const restaurantesFiltradosBase = [...restaurantesQmesa, ...restaurantesExternos];
+      const restaurantesFiltradosBase = deduplicarRestaurantesMapa([
+        ...restaurantesQmesa,
+        ...restaurantesExternos,
+      ]);
 
       const restaurantesComLotacao = await Promise.all(
         restaurantesFiltradosBase.map(async (restaurante) => ({
@@ -608,9 +633,8 @@ export default function MapaComTudo() {
         (item): item is QmesaMetrica & { latitude: number; longitude: number } =>
           typeof item.latitude === 'number' && typeof item.longitude === 'number',
       );
-      const abertos = comCoordenadas.filter((item) => item.aberto_agora !== false);
       const filtroDieta = obterFiltroDieta(filtro);
-      const porTexto = abertos.filter((item) => {
+      const porTexto = comCoordenadas.filter((item) => {
         if (!termo || filtro === 'restaurante' || filtroDieta) return true;
         return textoNormalizado(item.restaurante_nome || '').includes(termo);
       });
@@ -628,6 +652,7 @@ export default function MapaComTudo() {
                 )
                 .join(' ');
 
+              if (!textoCardapio.trim()) return item;
               return cardapioAtendeFiltroDieta(textoCardapio, filtro) ? item : null;
             }),
           )).filter((item): item is QmesaMetrica & { latitude: number; longitude: number } => Boolean(item))
@@ -637,7 +662,6 @@ export default function MapaComTudo() {
         console.info('[Qmesa API] Filtro no mapa:', {
           recebidos: metricas.length,
           comCoordenadas: comCoordenadas.length,
-          abertos: abertos.length,
           exibidosSemFiltroDeRaio: porDieta.length,
           raioIgnoradoParaQmesa: raio,
           filtroDieta: filtroDieta?.valor || null,
