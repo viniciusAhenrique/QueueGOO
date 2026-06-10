@@ -1,11 +1,15 @@
-import { QMESA_ANON_KEY, QMESA_REST_URL } from '@/src/constants/qmesa';
+import { QMESA_PUBLIC_API_URL } from '@/src/constants/qmesa';
 
-type SupabaseFilterValue = string | number;
+type QmesaRecurso = 'restaurantes' | 'lotacao' | 'metricas' | 'fila' | 'proximos_fila' | 'reservas' | 'cardapio';
 
-export interface QmesaRestaurante {
-  id: string;
-  nome: string;
-  capacidade: number | null;
+type NumeroApi = number | string | null;
+
+export interface QmesaLinkavel {
+  links?: {
+    fila?: string | null;
+    reserva?: string | null;
+  } | null;
+  link_fila?: string | null;
   link_reserva?: string | null;
   link_reservas?: string | null;
   reserva_link?: string | null;
@@ -17,19 +21,29 @@ export interface QmesaRestaurante {
   booking_url?: string | null;
 }
 
-export interface QmesaLotacao {
+export interface QmesaRestaurante extends QmesaLinkavel {
+  id: string;
+  slug?: string | null;
+  nome: string;
+  cnpj?: string | null;
+  capacidade: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  abertura_hoje?: string | null;
+  fechamento_hoje?: string | null;
+  periodos_hoje?: {
+    inicio: string;
+    fim: string;
+    especial: boolean;
+  }[] | null;
+  aberto_agora?: boolean | null;
+}
+
+export interface QmesaLotacao extends QmesaLinkavel {
   restaurante_id: string;
+  restaurante_slug?: string | null;
   restaurante_nome: string;
   restaurante_cnpj?: string | null;
-  link_reserva?: string | null;
-  link_reservas?: string | null;
-  reserva_link?: string | null;
-  reserva_url?: string | null;
-  url_reserva?: string | null;
-  url_reservas?: string | null;
-  link_qmesa?: string | null;
-  url_qmesa?: string | null;
-  booking_url?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   capacidade_total: number | null;
@@ -42,9 +56,6 @@ export interface QmesaLotacao {
 }
 
 export interface QmesaMetrica extends QmesaLotacao {
-  restaurante_cnpj?: string | null;
-  latitude: number | null;
-  longitude: number | null;
   abertura_hoje?: string | null;
   fechamento_hoje?: string | null;
   periodos_hoje?: {
@@ -53,7 +64,6 @@ export interface QmesaMetrica extends QmesaLotacao {
     especial: boolean;
   }[] | null;
   aberto_agora?: boolean | null;
-  mesas_livres?: number | null;
   movimento_atual?: string | null;
   horario_maior_movimento?: string | null;
   total_entradas_horario_pico?: number | null;
@@ -100,18 +110,70 @@ export interface QmesaCardapioItem {
   imagem_url?: string | null;
 }
 
-export function extrairLinkReservaQmesa(item: {
-  link_reserva?: string | null;
-  link_reservas?: string | null;
-  reserva_link?: string | null;
-  reserva_url?: string | null;
-  url_reserva?: string | null;
-  url_reservas?: string | null;
-  link_qmesa?: string | null;
-  url_qmesa?: string | null;
-  booking_url?: string | null;
-}) {
+type QmesaRawRestaurante = Omit<QmesaRestaurante, 'capacidade' | 'latitude' | 'longitude'> & {
+  capacidade: NumeroApi;
+  latitude?: NumeroApi;
+  longitude?: NumeroApi;
+};
+
+type QmesaRawLotacao = Omit<
+  QmesaLotacao,
+  | 'latitude'
+  | 'longitude'
+  | 'capacidade_total'
+  | 'mesas_totais'
+  | 'mesas_ocupadas'
+  | 'mesas_livres'
+  | 'ocupantes_atuais'
+  | 'percentual_ocupacao'
+> & {
+  latitude?: NumeroApi;
+  longitude?: NumeroApi;
+  capacidade_total: NumeroApi;
+  mesas_totais: NumeroApi;
+  mesas_ocupadas: NumeroApi;
+  mesas_livres?: NumeroApi;
+  ocupantes_atuais: NumeroApi;
+  percentual_ocupacao: NumeroApi;
+};
+
+type QmesaRawMetrica = QmesaRawLotacao & Omit<QmesaMetrica, keyof QmesaLotacao>;
+
+type QmesaEnvelope<T> = {
+  dados?: T;
+};
+
+function numeroApi(valor: NumeroApi) {
+  const numero = typeof valor === 'string' ? Number(valor) : valor;
+  return typeof numero === 'number' && Number.isFinite(numero) ? numero : null;
+}
+
+function normalizarRestaurante(item: QmesaRawRestaurante): QmesaRestaurante {
+  return {
+    ...item,
+    capacidade: numeroApi(item.capacidade),
+    latitude: numeroApi(item.latitude ?? null),
+    longitude: numeroApi(item.longitude ?? null),
+  };
+}
+
+function normalizarLotacao<T extends QmesaRawLotacao>(item: T): T & QmesaLotacao {
+  return {
+    ...item,
+    latitude: numeroApi(item.latitude ?? null),
+    longitude: numeroApi(item.longitude ?? null),
+    capacidade_total: numeroApi(item.capacidade_total),
+    mesas_totais: numeroApi(item.mesas_totais),
+    mesas_ocupadas: numeroApi(item.mesas_ocupadas),
+    mesas_livres: numeroApi(item.mesas_livres ?? null),
+    ocupantes_atuais: numeroApi(item.ocupantes_atuais),
+    percentual_ocupacao: numeroApi(item.percentual_ocupacao),
+  };
+}
+
+export function extrairLinkReservaQmesa(item: QmesaLinkavel) {
   const link =
+    item.links?.reserva ||
     item.link_reserva ||
     item.link_reservas ||
     item.reserva_link ||
@@ -131,115 +193,91 @@ export function extrairLinkReservaQmesa(item: {
   return `https://${linkLimpo}`;
 }
 
-async function qmesaFetch<T>(view: string, params: Record<string, SupabaseFilterValue>) {
-  const searchParams = new URLSearchParams();
+async function qmesaFetch<T>(recurso: QmesaRecurso, params: Record<string, string> = {}) {
+  const searchParams = new URLSearchParams({ recurso });
 
   for (const [key, value] of Object.entries(params)) {
-    searchParams.set(key, String(value));
+    searchParams.set(key, value);
   }
 
-  const url = `${QMESA_REST_URL}/${view}?${searchParams.toString()}`;
+  const url = `${QMESA_PUBLIC_API_URL}?${searchParams.toString()}`;
   if (__DEV__) {
-    console.info(`[Qmesa API] Consultando ${view}`);
+    console.info(`[Qmesa API] Consultando recurso=${recurso}`);
   }
 
   const response = await fetch(url, {
     headers: {
-      apikey: QMESA_ANON_KEY,
-      Authorization: `Bearer ${QMESA_ANON_KEY}`,
-      'Content-Type': 'application/json',
+      Accept: 'application/json',
     },
   });
 
   if (!response.ok) {
     const erro = await response.text();
     if (__DEV__) {
-      console.warn(`[Qmesa API] Erro em ${view}:`, {
+      console.warn(`[Qmesa API] Erro em recurso=${recurso}:`, {
         status: response.status,
         body: erro.slice(0, 300),
       });
     }
-    throw new Error(`Erro HTTP ${response.status} ao consultar ${view}.`);
+    throw new Error(`Erro HTTP ${response.status} ao consultar Qmesa ${recurso}.`);
   }
 
-  const dados = (await response.json()) as T;
+  const envelope = (await response.json()) as QmesaEnvelope<T> | T;
+  const dados = envelope && typeof envelope === 'object' && 'dados' in envelope
+    ? envelope.dados
+    : envelope;
+
   if (__DEV__) {
-    console.info(`[Qmesa API] Resposta de ${view}:`, {
+    console.info(`[Qmesa API] Resposta de recurso=${recurso}:`, {
       total: Array.isArray(dados) ? dados.length : null,
     });
   }
 
-  return dados;
+  return dados as T;
 }
 
-export function listarRestaurantesQmesa() {
-  return qmesaFetch<QmesaRestaurante[]>('api_v_restaurantes', {
-    select: '*',
-    order: 'nome.asc',
-  });
+function filtroRestaurante(restauranteId: string) {
+  return { restaurante_id: restauranteId };
+}
+
+export async function listarRestaurantesQmesa() {
+  const dados = await qmesaFetch<QmesaRawRestaurante[]>('restaurantes');
+  return dados.map(normalizarRestaurante);
 }
 
 export async function consultarRestauranteQmesa(restauranteId: string) {
-  const dados = await qmesaFetch<QmesaRestaurante[]>('api_v_restaurantes', {
-    select: '*',
-    id: `eq.${restauranteId}`,
-  });
-
-  return dados[0] || null;
+  const dados = await listarRestaurantesQmesa();
+  return dados.find((item) => item.id === restauranteId || item.slug === restauranteId) || null;
 }
 
-export function listarMetricasQmesa() {
-  return qmesaFetch<QmesaMetrica[]>('api_v_metricas', {
-    select: '*',
-    order: 'restaurante_nome.asc',
-  });
+export async function listarMetricasQmesa() {
+  const dados = await qmesaFetch<QmesaRawMetrica[]>('metricas');
+  return dados.map((item) => normalizarLotacao(item) as QmesaMetrica);
 }
 
-export function listarLotacoesQmesa() {
-  return qmesaFetch<QmesaLotacao[]>('api_v_lotacao', {
-    select: '*',
-    order: 'restaurante_nome.asc',
-  });
+export async function listarLotacoesQmesa() {
+  const dados = await qmesaFetch<QmesaRawLotacao[]>('lotacao');
+  return dados.map(normalizarLotacao);
 }
 
 export async function consultarLotacaoQmesa(restauranteId: string) {
-  const dados = await qmesaFetch<QmesaLotacao[]>('api_v_lotacao', {
-    select: '*',
-    restaurante_id: `eq.${restauranteId}`,
-  });
-
-  return dados[0] || null;
+  const dados = await qmesaFetch<QmesaRawLotacao[]>('lotacao', filtroRestaurante(restauranteId));
+  return dados.map(normalizarLotacao)[0] || null;
 }
 
 export async function consultarFilaQmesa(restauranteId: string) {
-  const dados = await qmesaFetch<QmesaFila[]>('api_v_fila', {
-    select: '*',
-    restaurante_id: `eq.${restauranteId}`,
-  });
-
+  const dados = await qmesaFetch<QmesaFila[]>('fila', filtroRestaurante(restauranteId));
   return dados[0] || null;
 }
 
 export function consultarProximosFilaQmesa(restauranteId: string) {
-  return qmesaFetch<QmesaProximoFila[]>('api_v_proximos_fila', {
-    select: '*',
-    restaurante_id: `eq.${restauranteId}`,
-    order: 'posicao.asc',
-  });
+  return qmesaFetch<QmesaProximoFila[]>('proximos_fila', filtroRestaurante(restauranteId));
 }
 
 export function consultarReservasQmesa(restauranteId: string) {
-  return qmesaFetch<QmesaReserva[]>('api_v_reservas', {
-    select: '*',
-    restaurante_id: `eq.${restauranteId}`,
-    order: 'data_hora.asc',
-  });
+  return qmesaFetch<QmesaReserva[]>('reservas', filtroRestaurante(restauranteId));
 }
 
 export function consultarCardapioQmesa(restauranteId: string) {
-  return qmesaFetch<QmesaCardapioItem[]>('api_v_cardapio', {
-    select: '*',
-    restaurante_id: `eq.${restauranteId}`,
-    order: 'categoria.asc,nome.asc',
-  });
+  return qmesaFetch<QmesaCardapioItem[]>('cardapio', filtroRestaurante(restauranteId));
 }

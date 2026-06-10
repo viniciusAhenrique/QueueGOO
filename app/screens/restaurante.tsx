@@ -239,7 +239,7 @@ export default function Restaurante() {
           const linkRecebido = extrairLinkReservaQmesa(restauranteAtual);
           if (linkRecebido) {
             if (__DEV__) {
-              console.info('[Qmesa API] Link de reserva recebido em api_v_restaurantes:', {
+              console.info('[Qmesa API] Link de reserva recebido em recurso=restaurantes:', {
                 restaurante_id: restauranteAtual.id,
                 restaurante_nome: restauranteAtual.nome,
               });

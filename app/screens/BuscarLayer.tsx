@@ -21,6 +21,7 @@ import {
   RestauranteResumo,
 } from '@/src/services/restauranteServices';
 import {
+  consultarCardapioQmesa,
   extrairLinkReservaQmesa,
   listarLotacoesQmesa,
   listarMetricasQmesa,
@@ -53,6 +54,33 @@ const categorias = [
 
 const raios = [1000, 2000, 4000, 7000, 12000, 20000, 50000];
 
+const restricoesAlimentares = [
+  {
+    nome: 'Sem gluten',
+    valor: 'sem-gluten',
+    termoBusca: 'sem gluten gluten free',
+    palavras: ['sem gluten', 'gluten free', 'gluten-free', 'nao contem gluten'],
+  },
+  {
+    nome: 'Sem lactose',
+    valor: 'sem-lactose',
+    termoBusca: 'sem lactose lactose free',
+    palavras: ['sem lactose', 'lactose free', 'zero lactose', 'nao contem lactose'],
+  },
+  {
+    nome: 'Vegano',
+    valor: 'vegano',
+    termoBusca: 'vegano vegan',
+    palavras: ['vegano', 'vegan', 'plant based', 'plant-based'],
+  },
+  {
+    nome: 'Vegetariano',
+    valor: 'vegetariano',
+    termoBusca: 'vegetariano vegetarian',
+    palavras: ['vegetariano', 'vegetarian'],
+  },
+];
+
 function ehMercado(restaurante: RestauranteResumo) {
   return restaurante.tipos?.some((tipo) =>
     tipo.includes('supermarket') || tipo.includes('grocery') || tipo.includes('commercial.food'),
@@ -68,6 +96,15 @@ function textoNormalizado(texto: string) {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+function cardapioAtendeRestricao(texto: string, restricao: string) {
+  if (!restricao) return true;
+  const filtro = restricoesAlimentares.find((item) => item.valor === restricao);
+  if (!filtro) return true;
+
+  const textoBase = textoNormalizado(texto);
+  return filtro.palavras.some((palavra) => textoBase.includes(textoNormalizado(palavra)));
 }
 
 function calcularDistanciaMetros(origem: LocalizacaoCoords, destino: LocalizacaoCoords) {
@@ -90,6 +127,7 @@ export default function BuscarLayer() {
   const [localizacao, setLocalizacao] = useState<LocalizacaoCoords | null>(null);
   const [raioBusca, setRaioBusca] = useState(2000);
   const [avaliacaoMinima, setAvaliacaoMinima] = useState('');
+  const [restricaoSelecionada, setRestricaoSelecionada] = useState('');
   const [loading, setLoading] = useState(false);
   const [buscaFeita, setBuscaFeita] = useState(false);
 
@@ -101,7 +139,7 @@ export default function BuscarLayer() {
       try {
         metricas = await listarMetricasQmesa();
       } catch (error) {
-        console.warn('View api_v_metricas indisponivel na busca, tentando api_v_lotacao:', error);
+        console.warn('Recurso metricas indisponivel na busca, tentando lotacao:', error);
         metricas = await listarLotacoesQmesa() as QmesaMetrica[];
       }
 
@@ -116,17 +154,37 @@ export default function BuscarLayer() {
         return textoNormalizado(item.restaurante_nome || '').includes(termoNormalizado);
       });
 
+      const porRestricao = restricaoSelecionada
+        ? (await Promise.all(
+            porTexto.map(async (item) => {
+              const cardapio = await consultarCardapioQmesa(item.restaurante_id).catch(() => []);
+              const textoCardapio = cardapio
+                .map((cardapioItem) =>
+                  [
+                    cardapioItem.nome,
+                    cardapioItem.descricao,
+                    cardapioItem.categoria,
+                  ].filter(Boolean).join(' '),
+                )
+                .join(' ');
+
+              return cardapioAtendeRestricao(textoCardapio, restricaoSelecionada) ? item : null;
+            }),
+          )).filter((item): item is QmesaMetrica & { latitude: number; longitude: number } => Boolean(item))
+        : porTexto;
+
       if (__DEV__) {
         console.info('[Qmesa API] Filtro na tela de busca:', {
           recebidos: metricas.length,
           comCoordenadas: comCoordenadas.length,
           abertos: abertos.length,
-          exibidosSemFiltroDeRaio: porTexto.length,
+          exibidosSemFiltroDeRaio: porRestricao.length,
           termo,
+          restricaoSelecionada,
         });
       }
 
-      return porTexto.map((item) => {
+      return porRestricao.map((item) => {
         const reservaUrlQmesa = extrairLinkReservaQmesa(item);
         if (__DEV__ && reservaUrlQmesa) {
           console.info('[Qmesa API] Link de reserva recebido na busca:', {
@@ -165,7 +223,7 @@ export default function BuscarLayer() {
       console.warn('API Qmesa indisponivel na busca:', error);
       return [];
     }
-  }, [localizacao]);
+  }, [localizacao, restricaoSelecionada]);
 
   useEffect(() => {
     (async () => {
@@ -191,7 +249,9 @@ export default function BuscarLayer() {
           : categoriaSelecionada === 'restaurant' || !categoriaSelecionada
             ? ''
             : categoriaSelecionada;
-      const termo = [termoCategoria, searchQuery].filter(Boolean).join(' ').trim();
+      const restricao = restricoesAlimentares.find((item) => item.valor === restricaoSelecionada);
+      const termoRestricao = restricao?.termoBusca || '';
+      const termo = [termoCategoria, searchQuery, termoRestricao].filter(Boolean).join(' ').trim();
       const [data, restaurantesQmesa] = await Promise.all([
         termo
           ? buscarRestaurantesPorTexto(termo, localizacao.latitude, localizacao.longitude, raioBusca)
@@ -221,7 +281,15 @@ export default function BuscarLayer() {
     } finally {
       setLoading(false);
     }
-  }, [avaliacaoMinima, buscarQmesa, categoriaSelecionada, localizacao, raioBusca, searchQuery]);
+  }, [
+    avaliacaoMinima,
+    buscarQmesa,
+    categoriaSelecionada,
+    localizacao,
+    raioBusca,
+    restricaoSelecionada,
+    searchQuery,
+  ]);
 
   const podeExpandirRaio = useMemo(() => raioBusca < raios[raios.length - 1], [raioBusca]);
 
@@ -241,7 +309,8 @@ export default function BuscarLayer() {
         : categoriaSelecionada === 'restaurant'
           ? ''
           : categoriaSelecionada;
-    const termoBusca = [termoCategoria, searchQuery].filter(Boolean).join(' ').trim();
+    const restricao = restricoesAlimentares.find((item) => item.valor === restricaoSelecionada);
+    const termoBusca = [termoCategoria, searchQuery, restricao?.termoBusca].filter(Boolean).join(' ').trim();
 
     router.push({
       pathname: '/screens/mapa',
@@ -344,6 +413,29 @@ export default function BuscarLayer() {
                 onPress={() => setCategoriaSelecionada(ativo ? '' : cat.valor)}
               >
                 <Text style={[styles.filterChipText, ativo && styles.filterChipTextActive]}>{cat.nome}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <Text style={styles.controlLabel}>Restricao alimentar</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+          {restricoesAlimentares.map((restricao) => {
+            const ativo = restricaoSelecionada === restricao.valor;
+            return (
+              <TouchableOpacity
+                key={restricao.valor}
+                style={[styles.dietChip, ativo && styles.dietChipActive]}
+                onPress={() => setRestricaoSelecionada(ativo ? '' : restricao.valor)}
+              >
+                <MaterialIcons
+                  name={restricao.valor === 'sem-gluten' ? 'no-food' : 'restaurant-menu'}
+                  size={15}
+                  color={ativo ? '#FFFFFF' : '#2E7D32'}
+                />
+                <Text style={[styles.dietChipText, ativo && styles.dietChipTextActive]}>
+                  {restricao.nome}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -474,6 +566,22 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: BLUE_DARK, borderColor: BLUE_DARK },
   filterChipText: { color: BLUE_DARK, fontSize: 12, fontWeight: '800' },
   filterChipTextActive: { color: '#FFFFFF' },
+  dietChip: {
+    minHeight: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7D7B8',
+    paddingHorizontal: 10,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F2FFF6',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  dietChipActive: { backgroundColor: '#2E7D32', borderColor: '#2E7D32' },
+  dietChipText: { color: '#2E7D32', fontSize: 12, fontWeight: '800' },
+  dietChipTextActive: { color: '#FFFFFF' },
   radiusChip: {
     minHeight: 32,
     borderRadius: 8,
