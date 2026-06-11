@@ -1,6 +1,5 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import * as ExpoLinking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import {
@@ -37,6 +36,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '@/firebaseconfig';
+import {
+  criarBlocoDownloadApp,
+  criarLinkPublicoEvento,
+  ehLinkExpoLocal,
+} from '@/src/constants/appDownload';
 import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
 import { isValidEmail, normalizeEmail } from '@/src/utils/validation';
 
@@ -186,19 +190,31 @@ export default function EventoDetalhes() {
     return `${evento.participantes.length} confirmados`;
   }, [evento]);
 
-  const criarLinkEvento = (eventoAtual: Evento) =>
-    eventoAtual.link || ExpoLinking.createURL(`/screens/evento?eventId=${eventoAtual.id}`);
+  const criarLinkEvento = (eventoAtual: Evento) => {
+    if (eventoAtual.link && !ehLinkExpoLocal(eventoAtual.link)) {
+      return eventoAtual.link;
+    }
 
-  const criarTextoConvite = (eventoAtual: Evento, link: string) => [
-    `Voce foi convidado para: ${eventoAtual.titulo}`,
-    '',
-    `Local: ${eventoAtual.local}`,
-    `Quando: ${eventoAtual.data}${eventoAtual.hora ? ` as ${eventoAtual.hora}` : ''}`,
-    eventoAtual.descricao ? `Detalhes: ${eventoAtual.descricao}` : null,
-    '',
-    'Confirme sua presenca e acompanhe a conversa pelo QueueGOO:',
-    link,
-  ].filter(Boolean).join('\n');
+    return criarLinkPublicoEvento(eventoAtual.id);
+  };
+
+  const criarTextoConvite = (eventoAtual: Evento, link: string) => {
+    const downloadApp = criarBlocoDownloadApp();
+
+    return [
+      `Voce foi convidado para: ${eventoAtual.titulo}`,
+      '',
+      `Local: ${eventoAtual.local}`,
+      `Quando: ${eventoAtual.data}${eventoAtual.hora ? ` as ${eventoAtual.hora}` : ''}`,
+      eventoAtual.descricao ? `Detalhes: ${eventoAtual.descricao}` : null,
+      '',
+      link ? 'Confirme sua presenca e acompanhe a conversa pelo QueueGOO:' : null,
+      link || null,
+      !link ? `Codigo do convite: ${eventoAtual.id}` : null,
+      downloadApp ? '' : null,
+      downloadApp,
+    ].filter(Boolean).join('\n');
+  };
 
   const buscarUsuarioConvite = async (termo: string) => {
     const termoNormalizado = termo

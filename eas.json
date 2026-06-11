@@ -13,7 +13,9 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://queuegoo-api.onrender.com",
-        "EXPO_PUBLIC_QMESA_PUBLIC_API_URL": "https://api.qmesa.com.br/qmesa-public-api"
+        "EXPO_PUBLIC_QMESA_PUBLIC_API_URL": "https://api.qmesa.com.br/qmesa-public-api",
+        "EXPO_PUBLIC_APP_DOWNLOAD_URL": "https://expo.dev/accounts/guripitcka/projects/QueueGo/builds",
+        "EXPO_PUBLIC_EVENT_LINK_BASE_URL": "https://queuegoo-api.onrender.com/evento"
       },
       "android": {
         "buildType": "apk"
@@ -23,7 +25,9 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://queuegoo-api.onrender.com",
-        "EXPO_PUBLIC_QMESA_PUBLIC_API_URL": "https://api.qmesa.com.br/qmesa-public-api"
+        "EXPO_PUBLIC_QMESA_PUBLIC_API_URL": "https://api.qmesa.com.br/qmesa-public-api",
+        "EXPO_PUBLIC_APP_DOWNLOAD_URL": "https://expo.dev/accounts/guripitcka/projects/QueueGo/builds",
+        "EXPO_PUBLIC_EVENT_LINK_BASE_URL": "https://queuegoo-api.onrender.com/evento"
       }
     }
   },

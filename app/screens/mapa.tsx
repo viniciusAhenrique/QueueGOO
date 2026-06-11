@@ -229,6 +229,8 @@ export default function MapaComTudo() {
   const [authUser, setAuthUser] = useState<User | null>(auth.currentUser);
   const [notificacoesPendentes, setNotificacoesPendentes] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [sorteandoMapa, setSorteandoMapa] = useState(false);
+  const [restauranteSurpresaId, setRestauranteSurpresaId] = useState<string | null>(null);
   const slideAnim = useState(new Animated.Value(-menuWidth))[0];
   // Ref tipada para liberar `animateToRegion` com segurança.
   const mapRef = useRef<MapView | null>(null);
@@ -307,6 +309,36 @@ export default function MapaComTudo() {
     setMenuOpen(false);
     router.push('/screens/role' as never);
   };
+  const sortearNoMapa = () => {
+    if (loading) {
+      Alert.alert('Buscando locais', 'Espera os restaurantes carregarem para eu sortear um lugar bom.');
+      return;
+    }
+
+    const candidatos = lugares.filter(
+      (lugar) =>
+        lugar.latitude &&
+        lugar.longitude &&
+        (lugar.tipo.toLowerCase().includes('restaurante') || lugar.origemQmesa),
+    );
+
+    if (!candidatos.length) {
+      Alert.alert('Sem restaurantes ainda', 'Tente aumentar o raio ou toque em buscar para carregar mais lugares.');
+      return;
+    }
+
+    setSorteandoMapa(true);
+    const favoritosDoSorteio = candidatos.filter((lugar) => lugar.origemQmesa || lugar.foto);
+    const base = favoritosDoSorteio.length >= 3 ? favoritosDoSorteio : candidatos;
+    const escolhido = base[Math.floor(Math.random() * base.length)];
+
+    setTimeout(() => {
+      setLugarSelecionado(escolhido);
+      setRestauranteSurpresaId(escolhido.id);
+      moverMapaPara({ latitude: escolhido.latitude, longitude: escolhido.longitude });
+      setSorteandoMapa(false);
+    }, 450);
+  };
   const irParaFeed = () => {
     setMenuOpen(false);
     router.push('/screens/feed' as never);
@@ -358,6 +390,7 @@ export default function MapaComTudo() {
 
   const handleMapDrag = () => {
     setLugarSelecionado(null);
+    setRestauranteSurpresaId(null);
   };
 
   useEffect(() => onAuthStateChanged(auth, setAuthUser), []);
@@ -750,7 +783,10 @@ export default function MapaComTudo() {
             key={lugar.id}
             coordinate={{ latitude: lugar.latitude, longitude: lugar.longitude }}
             pinColor={getPinColor(lugar.lotacao)}
-            onPress={() => setLugarSelecionado(lugar)}
+            onPress={() => {
+              setRestauranteSurpresaId(null);
+              setLugarSelecionado(lugar);
+            }}
           >
             {lugar.origemQmesa ? (
               <View
@@ -866,6 +902,51 @@ export default function MapaComTudo() {
           </View>
         </ScrollView>
       </View>
+
+      <TouchableOpacity
+        style={[styles.surpriseFab, sorteandoMapa && styles.surpriseFabLoading]}
+        onPress={sortearNoMapa}
+        disabled={sorteandoMapa}
+        activeOpacity={0.88}
+      >
+        {sorteandoMapa ? (
+          <ActivityIndicator color="#0D47A1" />
+        ) : (
+          <MaterialIcons name="casino" size={24} color="#0D47A1" />
+        )}
+      </TouchableOpacity>
+
+      {lugarSelecionado && restauranteSurpresaId === lugarSelecionado.id && !menuOpen && (
+        <View style={styles.surpriseResultCard}>
+          <View style={styles.surpriseResultIcon}>
+            <MaterialIcons name="casino" size={18} color="#0D47A1" />
+          </View>
+          <View style={styles.surpriseResultText}>
+            <Text style={styles.surpriseResultLabel}>Role aleatorio</Text>
+            <Text style={styles.surpriseResultName} numberOfLines={1}>
+              {lugarSelecionado.nome}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.surpriseResultAction}
+            onPress={() =>
+              router.push({
+                pathname: '/screens/restaurante',
+                params: {
+                  placeId: lugarSelecionado.id,
+                  nome: lugarSelecionado.nome,
+                  tipo: lugarSelecionado.tipo,
+                  origemQmesa: lugarSelecionado.origemQmesa ? '1' : '0',
+                  fotoUrl: lugarSelecionado.foto || undefined,
+                  reservaUrlQmesa: lugarSelecionado.reservaUrlQmesa || undefined,
+                },
+              } as never)
+            }
+          >
+            <Text style={styles.surpriseResultActionText}>Abrir</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <TouchableOpacity style={styles.locationButton} onPress={centralizarLocal}>
         <MaterialIcons name="gps-fixed" size={24} color="#0D47A1" />
@@ -1149,6 +1230,63 @@ const styles = StyleSheet.create({
   radiusChipActive: { backgroundColor: '#111827', borderColor: '#111827' },
   radiusChipText: { color: '#0D47A1', fontSize: 12, fontFamily: 'Urbanist_700Bold' },
   radiusChipTextActive: { color: '#FFFFFF' },
+  surpriseFab: {
+    position: 'absolute',
+    right: 20,
+    bottom: 262,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#0D47A1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    zIndex: 10,
+  },
+  surpriseFabLoading: { opacity: 0.85 },
+  surpriseResultCard: {
+    position: 'absolute',
+    top: 230,
+    left: 16,
+    right: 84,
+    minHeight: 58,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    elevation: 6,
+    zIndex: 9,
+  },
+  surpriseResultIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#E3F2FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  surpriseResultText: { flex: 1 },
+  surpriseResultLabel: { color: '#0D47A1', fontSize: 11, fontFamily: 'Urbanist_700Bold' },
+  surpriseResultName: { color: '#1e232c', fontSize: 14, fontFamily: 'Poppins_700Bold', marginTop: 1 },
+  surpriseResultAction: {
+    minHeight: 34,
+    borderRadius: 8,
+    backgroundColor: '#0D47A1',
+    paddingHorizontal: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  surpriseResultActionText: { color: '#FFFFFF', fontSize: 12, fontFamily: 'Urbanist_700Bold' },
   locationButton: {
     position: 'absolute',
     bottom: 84,

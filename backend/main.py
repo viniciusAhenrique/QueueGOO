@@ -1,5 +1,8 @@
+from html import escape
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 import json
 import os
 from pathlib import Path
@@ -98,3 +101,94 @@ async def startup():
 @app.get("/", tags=["Health"])
 def health_check():
     return {"status": "ok", "app": "QueueGOO API"}
+
+
+@app.get("/evento", response_class=HTMLResponse, tags=["Eventos"])
+def convite_evento(eventId: str = ""):
+    event_id = escape(eventId.strip())
+    app_scheme = os.getenv("PUBLIC_APP_SCHEME", "queuegoo").strip() or "queuegoo"
+    app_download_url = os.getenv(
+        "PUBLIC_APP_DOWNLOAD_URL",
+        "https://expo.dev/accounts/guripitcka/projects/QueueGo/builds",
+    ).strip()
+    app_link = f"{app_scheme}://screens/evento?eventId={event_id}" if event_id else f"{app_scheme}://"
+
+    return f"""<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Convite QueueGOO</title>
+    <style>
+      body {{
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #e3f2fd;
+        color: #1e232c;
+      }}
+      main {{
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }}
+      section {{
+        width: 100%;
+        max-width: 440px;
+        background: #ffffff;
+        border: 1px solid #b3e5fc;
+        border-radius: 12px;
+        padding: 22px;
+        box-shadow: 0 14px 30px rgba(13, 71, 161, 0.16);
+      }}
+      h1 {{
+        margin: 0 0 8px;
+        font-size: 24px;
+        color: #0d47a1;
+      }}
+      p {{
+        margin: 8px 0;
+        line-height: 1.45;
+      }}
+      .code {{
+        margin: 14px 0;
+        padding: 10px;
+        border-radius: 8px;
+        background: #f8fcff;
+        border: 1px solid #b3e5fc;
+        word-break: break-all;
+        font-size: 13px;
+      }}
+      a {{
+        display: block;
+        margin-top: 10px;
+        padding: 13px 14px;
+        border-radius: 8px;
+        text-align: center;
+        text-decoration: none;
+        font-weight: 700;
+      }}
+      .primary {{
+        background: #0d47a1;
+        color: #ffffff;
+      }}
+      .secondary {{
+        background: #e3f2fd;
+        color: #0d47a1;
+      }}
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>Convite QueueGOO</h1>
+        <p>Voce recebeu um convite para um evento no QueueGOO.</p>
+        <p>Abra o app para confirmar presenca e acompanhar a conversa.</p>
+        {f'<div class="code">Codigo do evento: {event_id}</div>' if event_id else ''}
+        <a class="primary" href="{app_link}">Abrir no app</a>
+        <a class="secondary" href="{escape(app_download_url)}">Baixar ou testar o app</a>
+      </section>
+    </main>
+  </body>
+</html>"""

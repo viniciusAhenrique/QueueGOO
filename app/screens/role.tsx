@@ -23,11 +23,14 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
@@ -43,6 +46,8 @@ import {
   buscarRestaurantesProximos,
   RestauranteResumo,
 } from '@/src/services/restauranteServices';
+import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
+import { isValidEmail, normalizeEmail } from '@/src/utils/validation';
 
 type GrupoRole = {
   id: string;
@@ -59,6 +64,13 @@ type MensagemRole = {
   uid: string;
   nome: string;
   texto: string;
+};
+
+type UsuarioConvite = {
+  uid: string;
+  nome: string;
+  email: string;
+  fotoUrl?: string | null;
 };
 
 type RestauranteSorteado = {
@@ -127,6 +139,14 @@ function resumirCardapio(cardapio: QmesaCardapioItem[]) {
     .map((item) => item.nome);
 }
 
+function normalizarTexto(texto: string) {
+  return texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 function primeiraImagemCardapio(cardapio: QmesaCardapioItem[]) {
   return cardapio.find((item) => item.imagem_url)?.imagem_url || null;
 }
@@ -141,9 +161,11 @@ export default function RoleScreen() {
   const [descricaoGrupo, setDescricaoGrupo] = useState('');
   const [mensagem, setMensagem] = useState('');
   const [termoSorteio, setTermoSorteio] = useState('');
+  const [buscaConvite, setBuscaConvite] = useState('');
   const [raioSorteio, setRaioSorteio] = useState(12000);
   const [loading, setLoading] = useState(true);
   const [sorteando, setSorteando] = useState(false);
+  const [convidando, setConvidando] = useState(false);
   const grupoCriadoPendente = useRef<string | null>(null);
 
   const grupoSelecionado = useMemo(
@@ -290,6 +312,119 @@ export default function RoleScreen() {
       criadoEm: serverTimestamp(),
     });
     setMensagem('');
+  };
+
+  const buscarUsuarioParaConvite = async (termo: string): Promise<UsuarioConvite | null> => {
+    const termoLimpo = termo.trim();
+    if (!termoLimpo) return null;
+
+    if (isValidEmail(normalizeEmail(termoLimpo))) {
+      const email = normalizeEmail(termoLimpo);
+      const porEmailLower = await getDocs(
+        query(collection(db, 'usuarios'), where('emailLower', '==', email), limit(1)),
+      );
+      const snapshot = porEmailLower.empty
+        ? await getDocs(query(collection(db, 'usuarios'), where('email', '==', email), limit(1)))
+        : porEmailLower;
+      const documento = snapshot.docs[0];
+      if (documento) {
+        const dados = documento.data();
+        return {
+          uid: documento.id,
+          nome: String(dados.nome || dados.displayName || dados.email || 'Usuario'),
+          email: String(dados.email || ''),
+          fotoUrl: typeof dados.fotoUrl === 'string' ? dados.fotoUrl : null,
+        };
+      }
+    }
+
+    const termoNormalizado = normalizarTexto(termoLimpo);
+    const usuariosSnapshot = await getDocs(query(collection(db, 'usuarios'), limit(100)));
+    const documento = usuariosSnapshot.docs.find((docUsuario) => {
+      const dados = docUsuario.data();
+      const nome = normalizarTexto(String(dados.nome || dados.displayName || ''));
+      const email = normalizarTexto(String(dados.email || ''));
+      return nome.includes(termoNormalizado) || email.includes(termoNormalizado);
+    });
+
+    if (!documento) return null;
+
+    const dados = documento.data();
+    return {
+      uid: documento.id,
+      nome: String(dados.nome || dados.displayName || dados.email || 'Usuario'),
+      email: String(dados.email || ''),
+      fotoUrl: typeof dados.fotoUrl === 'string' ? dados.fotoUrl : null,
+    };
+  };
+
+  const convidarParaRole = async () => {
+    if (!user || !grupoSelecionado) return;
+
+    const termo = buscaConvite.trim();
+    if (!termo) {
+      Alert.alert('Convite', 'Digite o nome ou email de uma pessoa cadastrada no app.');
+      return;
+    }
+
+    setConvidando(true);
+    try {
+      const convidado = await buscarUsuarioParaConvite(termo);
+      if (!convidado) {
+        Alert.alert(
+          'Usuario nao encontrado',
+          'Para o role aleatorio, por enquanto o convite entra para pessoas que ja tem perfil no app. Tente buscar pelo nome ou email cadastrado.',
+        );
+        return;
+      }
+
+      if (convidado.uid === user.uid) {
+        Alert.alert('Voce ja esta no role', 'Esse grupo ja esta na sua lista.');
+        return;
+      }
+
+      if (grupoSelecionado.participantes.includes(convidado.uid)) {
+        Alert.alert('Ja esta no role', `${convidado.nome} ja participa deste grupo.`);
+        setBuscaConvite('');
+        return;
+      }
+
+      await updateDoc(doc(db, COLLECTION, grupoSelecionado.id), {
+        participantes: arrayUnion(convidado.uid),
+        atualizadoEm: serverTimestamp(),
+      });
+
+      setGrupos((atuais) =>
+        atuais.map((grupo) =>
+          grupo.id === grupoSelecionado.id
+            ? { ...grupo, participantes: [...grupo.participantes, convidado.uid] }
+            : grupo,
+        ),
+      );
+
+      await addDoc(collection(db, COLLECTION, grupoSelecionado.id, 'mensagens'), {
+        uid: user.uid,
+        nome: nomeUsuario(user),
+        texto: `${convidado.nome} entrou no role.`,
+        criadoEm: serverTimestamp(),
+      });
+
+      await criarNotificacaoUsuario(convidado.uid, {
+        tipo: 'chat',
+        titulo: 'Convite para role',
+        mensagem: `${nomeUsuario(user)} te adicionou ao role "${grupoSelecionado.nome}".`,
+        chatId: grupoSelecionado.id,
+        link: `/screens/role`,
+      });
+
+      setBuscaConvite('');
+      Alert.alert('Convite enviado', `${convidado.nome} foi adicionado ao role.`);
+    } catch (error) {
+      console.error('Erro ao convidar para role:', error);
+      Alert.alert('Erro', 'Nao foi possivel convidar essa pessoa agora.');
+    } finally {
+      setConvidando(false);
+    }
   };
 
   const obterCoordenadas = async () => {
@@ -625,6 +760,34 @@ export default function RoleScreen() {
                   <Text style={styles.description}>{grupoSelecionado.descricao}</Text>
                 ) : null}
 
+                <View style={styles.inviteBox}>
+                  <Text style={styles.inviteTitle}>Convidar para o role</Text>
+                  <View style={styles.inviteRow}>
+                    <TextInput
+                      style={styles.inviteInput}
+                      value={buscaConvite}
+                      onChangeText={setBuscaConvite}
+                      placeholder="Nome ou email do app"
+                      placeholderTextColor="#667085"
+                      autoCapitalize="none"
+                    />
+                    <TouchableOpacity
+                      style={[styles.inviteButton, convidando && styles.disabledButton]}
+                      onPress={convidarParaRole}
+                      disabled={convidando}
+                    >
+                      {convidando ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <MaterialIcons name="person-add-alt" size={18} color="#FFFFFF" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.inviteHint}>
+                    Busque por nome ou email cadastrado. A pessoa entra no grupo e recebe notificacao.
+                  </Text>
+                </View>
+
                 {grupoSelecionado.restauranteSorteado ? (
                   <View style={styles.winnerBox}>
                     {grupoSelecionado.restauranteSorteado.fotoUrl ? (
@@ -873,6 +1036,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   description: { color: '#344054', lineHeight: 20, marginTop: 10, marginBottom: 12 },
+  inviteBox: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#F8FCFF',
+    padding: 10,
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  inviteTitle: {
+    color: INK,
+    fontSize: 13,
+    fontFamily: 'Urbanist_700Bold',
+    marginBottom: 8,
+  },
+  inviteRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  inviteInput: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#FFFFFF',
+    color: INK,
+    paddingHorizontal: 12,
+  },
+  inviteButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    backgroundColor: BLUE_DARK,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteHint: { color: '#667085', fontSize: 12, lineHeight: 17, marginTop: 8 },
   winnerBox: {
     borderRadius: 8,
     backgroundColor: '#FFF7E8',

@@ -1,5 +1,4 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import * as ExpoLinking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -38,6 +37,7 @@ import {
 } from 'firebase/firestore';
 
 import { auth, db } from '@/firebaseconfig';
+import { criarBlocoDownloadApp, criarLinkPublicoEvento } from '@/src/constants/appDownload';
 import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
 import {
   buscarRestaurantesPorTexto,
@@ -550,9 +550,11 @@ export default function Social() {
   const criarTextoConviteEvento = (
     evento: { titulo: string; local: string; data: string; hora: string; descricao?: string },
     link: string,
+    eventId?: string,
   ) => {
     const quando = [evento.data, evento.hora && `as ${evento.hora}`].filter(Boolean).join(' ');
     const descricao = evento.descricao?.trim();
+    const downloadApp = criarBlocoDownloadApp();
 
     return [
       `Voce foi convidado para: ${evento.titulo}`,
@@ -561,19 +563,23 @@ export default function Social() {
       `Quando: ${quando}`,
       descricao ? `Detalhes: ${descricao}` : null,
       '',
-      'Confirme sua presenca e acompanhe a conversa pelo QueueGOO:',
-      link,
+      link ? 'Confirme sua presenca e acompanhe a conversa pelo QueueGOO:' : null,
+      link || null,
+      !link && eventId ? `Codigo do convite: ${eventId}` : null,
+      downloadApp ? '' : null,
+      downloadApp,
     ].filter(Boolean).join('\n');
   };
 
   const compartilharEvento = (
     evento: { titulo: string; local: string; data: string; hora: string; descricao?: string },
     link: string,
+    eventId: string,
   ) => {
     const emails = Array.from(
       new Set([...normalizarEmails(form.convidados), ...amigosEscolhidos.map((amigo) => amigo.email)]),
     ).filter(Boolean);
-    const texto = criarTextoConviteEvento(evento, link);
+    const texto = criarTextoConviteEvento(evento, link, eventId);
     const assunto = `Convite: ${evento.titulo}`;
 
     Alert.alert('Evento criado', 'Notificacoes internas foram enviadas. Compartilhe tambem:', [
@@ -640,8 +646,10 @@ export default function Social() {
         atualizadoEm: serverTimestamp(),
       });
 
-      const link = ExpoLinking.createURL(`/screens/evento?eventId=${docRef.id}`);
-      await updateDoc(docRef, { link });
+      const link = criarLinkPublicoEvento(docRef.id);
+      if (link) {
+        await updateDoc(docRef, { link });
+      }
       await notificarConvidados(docRef.id, form.titulo.trim(), link, amigosEscolhidos);
 
       compartilharEvento(
@@ -653,6 +661,7 @@ export default function Social() {
           descricao: form.descricao.trim(),
         },
         link,
+        docRef.id,
       );
 
       setForm({ titulo: '', local: '', placeId: '', data: '', hora: '', descricao: '', convidados: '' });
