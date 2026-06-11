@@ -140,13 +140,19 @@ export default function Social() {
     data?: string;
     hora?: string;
     pessoas?: string;
+    convidarUid?: string;
+    convidarNome?: string;
+    convidarEmail?: string;
+    convidarFoto?: string;
   }>();
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [aba, setAba] = useState<Aba>('feed');
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [amigos, setAmigos] = useState<Amigo[]>([]);
   const [amigosSelecionados, setAmigosSelecionados] = useState<string[]>([]);
+  const [convidadosAppSelecionados, setConvidadosAppSelecionados] = useState<Amigo[]>([]);
   const [novoAmigoEmail, setNovoAmigoEmail] = useState('');
+  const [convidadoBusca, setConvidadoBusca] = useState('');
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [formAberto, setFormAberto] = useState(params.novoEvento === '1');
@@ -299,15 +305,75 @@ export default function Social() {
     );
   }, [aba, amigos, emailUsuario, eventos, user?.uid]);
 
-  const amigosEscolhidos = useMemo(
-    () => amigos.filter((amigo) => amigosSelecionados.includes(amigo.uid)),
-    [amigos, amigosSelecionados],
-  );
+  const amigosEscolhidos = useMemo(() => {
+    const selecionados = amigos.filter((amigo) => amigosSelecionados.includes(amigo.uid));
+    const porUid = new Map<string, Amigo>();
+
+    [...selecionados, ...convidadosAppSelecionados].forEach((amigo) => {
+      porUid.set(amigo.uid, amigo);
+    });
+
+    return Array.from(porUid.values());
+  }, [amigos, amigosSelecionados, convidadosAppSelecionados]);
+
+  useEffect(() => {
+    if (!params.convidarUid) return;
+
+    const convidado: Amigo = {
+      uid: params.convidarUid,
+      nome: params.convidarNome || params.convidarEmail || 'Convidado',
+      email: String(params.convidarEmail || '').toLowerCase(),
+      fotoUrl: params.convidarFoto || null,
+    };
+
+    setFormAberto(true);
+    setAba('meus');
+    setConvidadosAppSelecionados((atuais) =>
+      atuais.some((item) => item.uid === convidado.uid) ? atuais : [...atuais, convidado],
+    );
+  }, [params.convidarEmail, params.convidarFoto, params.convidarNome, params.convidarUid]);
 
   const alternarAmigoSelecionado = (uid: string) => {
     setAmigosSelecionados((atuais) =>
       atuais.includes(uid) ? atuais.filter((item) => item !== uid) : [...atuais, uid],
     );
+  };
+
+  const buscarUsuarioPorNomeOuEmail = async (termoBusca: string) => {
+    const termoNormalizado = normalizarBuscaUsuario(termoBusca);
+
+    if (isValidEmail(normalizeEmail(termoBusca))) {
+      const email = normalizeEmail(termoBusca);
+      const buscaPorLower = await getDocs(
+        query(collection(db, 'usuarios'), where('emailLower', '==', email), limit(1)),
+      );
+      const buscaPorEmail = buscaPorLower.empty
+        ? await getDocs(query(collection(db, 'usuarios'), where('email', '==', email), limit(1)))
+        : buscaPorLower;
+
+      return buscaPorEmail.empty ? null : buscaPorEmail.docs[0];
+    }
+
+    const usuariosSnapshot = await getDocs(query(collection(db, 'usuarios'), limit(100)));
+    return usuariosSnapshot.docs.find((docUsuario) => {
+      const dadosUsuario = docUsuario.data();
+      const nome = normalizarBuscaUsuario(String(dadosUsuario.nome || ''));
+      const emailUsuarioEncontrado = normalizarBuscaUsuario(String(dadosUsuario.email || ''));
+
+      return nome.includes(termoNormalizado) || emailUsuarioEncontrado.includes(termoNormalizado);
+    }) || null;
+  };
+
+  const documentoParaAmigo = (documento: Awaited<ReturnType<typeof buscarUsuarioPorNomeOuEmail>>): Amigo | null => {
+    if (!documento) return null;
+
+    const dados = documento.data();
+    return {
+      uid: documento.id,
+      nome: String(dados.nome || dados.email || 'Usuario'),
+      email: String(dados.email || '').toLowerCase(),
+      fotoUrl: typeof dados.fotoUrl === 'string' ? dados.fotoUrl : null,
+    };
   };
 
   const adicionarAmigo = async () => {
@@ -411,6 +477,57 @@ export default function Social() {
     }
   };
 
+  const adicionarConvidadoAoEvento = async () => {
+    if (!user) return;
+
+    const termoBusca = convidadoBusca.trim();
+    if (!termoBusca) {
+      Alert.alert('Quem voce quer chamar?', 'Digite nome ou email de alguem do app, ou um email externo.');
+      return;
+    }
+
+    try {
+      const documento = await buscarUsuarioPorNomeOuEmail(termoBusca);
+      const amigo = documentoParaAmigo(documento);
+
+      if (amigo) {
+        if (amigo.uid === user.uid) {
+          Alert.alert('Esse e voce', 'Voce ja entra como confirmado no evento.');
+          return;
+        }
+
+        if (amigos.some((item) => item.uid === amigo.uid)) {
+          setAmigosSelecionados((atuais) =>
+            atuais.includes(amigo.uid) ? atuais : [...atuais, amigo.uid],
+          );
+        } else {
+          setConvidadosAppSelecionados((atuais) =>
+            atuais.some((item) => item.uid === amigo.uid) ? atuais : [...atuais, amigo],
+          );
+        }
+
+        setConvidadoBusca('');
+        return;
+      }
+
+      if (isValidEmail(normalizeEmail(termoBusca))) {
+        const email = normalizeEmail(termoBusca);
+        setForm((current) => {
+          const emails = new Set(normalizarEmails(current.convidados));
+          emails.add(email);
+          return { ...current, convidados: Array.from(emails).join(', ') };
+        });
+        setConvidadoBusca('');
+        return;
+      }
+
+      Alert.alert('Nao encontrado', 'Nao achei usuario com esse nome. Para convidar alguem de fora, digite o email completo.');
+    } catch (error) {
+      console.error('Erro ao adicionar convidado ao evento:', error);
+      Alert.alert('Erro', 'Nao foi possivel adicionar esse convidado agora.');
+    }
+  };
+
   const notificarConvidados = async (
     eventId: string,
     titulo: string,
@@ -430,20 +547,45 @@ export default function Social() {
     );
   };
 
-  const compartilharEvento = (evento: { titulo: string; local: string; data: string; hora: string }, link: string) => {
+  const criarTextoConviteEvento = (
+    evento: { titulo: string; local: string; data: string; hora: string; descricao?: string },
+    link: string,
+  ) => {
+    const quando = [evento.data, evento.hora && `as ${evento.hora}`].filter(Boolean).join(' ');
+    const descricao = evento.descricao?.trim();
+
+    return [
+      `Voce foi convidado para: ${evento.titulo}`,
+      '',
+      `Local: ${evento.local}`,
+      `Quando: ${quando}`,
+      descricao ? `Detalhes: ${descricao}` : null,
+      '',
+      'Confirme sua presenca e acompanhe a conversa pelo QueueGOO:',
+      link,
+    ].filter(Boolean).join('\n');
+  };
+
+  const compartilharEvento = (
+    evento: { titulo: string; local: string; data: string; hora: string; descricao?: string },
+    link: string,
+  ) => {
     const emails = Array.from(
       new Set([...normalizarEmails(form.convidados), ...amigosEscolhidos.map((amigo) => amigo.email)]),
-    );
-    const texto = `Bora nesse evento? ${evento.titulo} em ${evento.local}, ${evento.data} ${evento.hora}. Link: ${link}`;
+    ).filter(Boolean);
+    const texto = criarTextoConviteEvento(evento, link);
+    const assunto = `Convite: ${evento.titulo}`;
 
     Alert.alert('Evento criado', 'Notificacoes internas foram enviadas. Compartilhe tambem:', [
-      {
-        text: 'Email',
-        onPress: () =>
-          Linking.openURL(
-            `mailto:${emails.join(',')}?subject=${encodeURIComponent(evento.titulo)}&body=${encodeURIComponent(texto)}`,
-          ),
-      },
+      ...(emails.length
+        ? [{
+            text: 'Email',
+            onPress: () =>
+              Linking.openURL(
+                `mailto:${emails.join(',')}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(texto)}`,
+              ),
+          }]
+        : []),
       {
         text: 'WhatsApp',
         onPress: () => Linking.openURL(`https://wa.me/?text=${encodeURIComponent(texto)}`),
@@ -498,7 +640,7 @@ export default function Social() {
         atualizadoEm: serverTimestamp(),
       });
 
-      const link = ExpoLinking.createURL(`/screens/social?eventoId=${docRef.id}`);
+      const link = ExpoLinking.createURL(`/screens/evento?eventId=${docRef.id}`);
       await updateDoc(docRef, { link });
       await notificarConvidados(docRef.id, form.titulo.trim(), link, amigosEscolhidos);
 
@@ -508,6 +650,7 @@ export default function Social() {
           local: form.local.trim(),
           data: form.data.trim(),
           hora: form.hora.trim(),
+          descricao: form.descricao.trim(),
         },
         link,
       );
@@ -515,6 +658,8 @@ export default function Social() {
       setForm({ titulo: '', local: '', placeId: '', data: '', hora: '', descricao: '', convidados: '' });
       setBuscaLocal('');
       setAmigosSelecionados([]);
+      setConvidadosAppSelecionados([]);
+      setConvidadoBusca('');
       setFormAberto(false);
       setAba('meus');
     } catch (error) {
@@ -1030,6 +1175,52 @@ export default function Social() {
                 </View>
               )}
 
+              <View style={styles.inviteSearchPanel}>
+                <Text style={styles.smallLabel}>Adicionar convidados</Text>
+                <View style={styles.inviteSearchRow}>
+                  <TextInput
+                    style={styles.inviteSearchInput}
+                    value={convidadoBusca}
+                    onChangeText={setConvidadoBusca}
+                    placeholder="Nome, email do app ou email externo"
+                    placeholderTextColor="#667085"
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                  <TouchableOpacity style={styles.inviteAddButton} onPress={adicionarConvidadoAoEvento}>
+                    <MaterialIcons name="person-add-alt" size={19} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.helperText}>
+                  Amigos recebem notificacao no app. Emails externos entram no convite por email/WhatsApp.
+                </Text>
+              </View>
+
+              {amigosEscolhidos.length > 0 && (
+                <View style={styles.selectedInvitePanel}>
+                  <Text style={styles.smallLabel}>Convidados do app</Text>
+                  <View style={styles.selectedInviteWrap}>
+                    {amigosEscolhidos.map((amigo) => (
+                      <View key={amigo.uid} style={styles.selectedInviteChip}>
+                        <Image
+                          source={{ uri: amigo.fotoUrl || avatarFallback(amigo.uid) }}
+                          style={styles.selectedInviteAvatar}
+                        />
+                        <Text style={styles.selectedInviteText} numberOfLines={1}>{amigo.nome}</Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setAmigosSelecionados((atuais) => atuais.filter((uid) => uid !== amigo.uid));
+                            setConvidadosAppSelecionados((atuais) => atuais.filter((item) => item.uid !== amigo.uid));
+                          }}
+                        >
+                          <MaterialIcons name="close" size={16} color={BLUE_DARK} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
               <TextInput
                 style={styles.input}
                 value={form.convidados}
@@ -1342,6 +1533,51 @@ const styles = StyleSheet.create({
   selectFriendChipActive: { backgroundColor: BLUE_DARK, borderColor: BLUE_DARK },
   selectFriendText: { color: INK, fontFamily: 'Urbanist_700Bold', maxWidth: 92 },
   selectFriendTextActive: { color: '#FFFFFF' },
+  inviteSearchPanel: { marginBottom: 10 },
+  inviteSearchRow: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inviteSearchInput: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    color: INK,
+  },
+  inviteAddButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 8,
+    backgroundColor: BLUE_DARK,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedInvitePanel: { marginBottom: 10 },
+  selectedInviteWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  selectedInviteChip: {
+    maxWidth: '100%',
+    minHeight: 38,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#F8FCFF',
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  selectedInviteAvatar: { width: 24, height: 24, borderRadius: 12 },
+  selectedInviteText: { maxWidth: 180, color: BLUE_DARK, fontFamily: 'Urbanist_700Bold' },
   primaryButton: {
     minHeight: 48,
     borderRadius: 8,

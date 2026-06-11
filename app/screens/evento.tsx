@@ -1,5 +1,6 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ExpoLinking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import {
@@ -9,17 +10,21 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocs,
+  limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -33,6 +38,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { auth, db } from '@/firebaseconfig';
 import { criarNotificacaoUsuario } from '@/src/services/pushNotificationService';
+import { isValidEmail, normalizeEmail } from '@/src/utils/validation';
 
 type Evento = {
   id: string;
@@ -49,6 +55,7 @@ type Evento = {
   status: string;
   respostas: Record<string, string>;
   ocultoPara: string[];
+  link?: string;
 };
 
 type Mensagem = {
@@ -92,6 +99,7 @@ export default function EventoDetalhes() {
     descricao: '',
     dataHora: new Date(),
   });
+  const [conviteBusca, setConviteBusca] = useState('');
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
@@ -125,6 +133,7 @@ export default function EventoDetalhes() {
               ? (dados.respostas as Record<string, string>)
               : {},
           ocultoPara: Array.isArray(dados.ocultoPara) ? dados.ocultoPara : [],
+          link: typeof dados.link === 'string' ? dados.link : '',
         });
       },
       (error) => {
@@ -176,6 +185,129 @@ export default function EventoDetalhes() {
     if (!evento) return '0 confirmados';
     return `${evento.participantes.length} confirmados`;
   }, [evento]);
+
+  const criarLinkEvento = (eventoAtual: Evento) =>
+    eventoAtual.link || ExpoLinking.createURL(`/screens/evento?eventId=${eventoAtual.id}`);
+
+  const criarTextoConvite = (eventoAtual: Evento, link: string) => [
+    `Voce foi convidado para: ${eventoAtual.titulo}`,
+    '',
+    `Local: ${eventoAtual.local}`,
+    `Quando: ${eventoAtual.data}${eventoAtual.hora ? ` as ${eventoAtual.hora}` : ''}`,
+    eventoAtual.descricao ? `Detalhes: ${eventoAtual.descricao}` : null,
+    '',
+    'Confirme sua presenca e acompanhe a conversa pelo QueueGOO:',
+    link,
+  ].filter(Boolean).join('\n');
+
+  const buscarUsuarioConvite = async (termo: string) => {
+    const termoNormalizado = termo
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim()
+      .toLowerCase();
+
+    if (isValidEmail(normalizeEmail(termo))) {
+      const email = normalizeEmail(termo);
+      const porLower = await getDocs(
+        query(collection(db, 'usuarios'), where('emailLower', '==', email), limit(1)),
+      );
+      const porEmail = porLower.empty
+        ? await getDocs(query(collection(db, 'usuarios'), where('email', '==', email), limit(1)))
+        : porLower;
+
+      return porEmail.empty ? null : porEmail.docs[0];
+    }
+
+    const usuarios = await getDocs(query(collection(db, 'usuarios'), limit(100)));
+    return usuarios.docs.find((docUsuario) => {
+      const dados = docUsuario.data();
+      const nome = String(dados.nome || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+      const email = String(dados.email || '').toLowerCase();
+
+      return nome.includes(termoNormalizado) || email.includes(termoNormalizado);
+    }) || null;
+  };
+
+  const convidarPessoa = async () => {
+    if (!user || !evento || !podeGerenciar) return;
+
+    const termo = conviteBusca.trim();
+    if (!termo) {
+      Alert.alert('Adicionar convidado', 'Digite nome, email do app ou email externo.');
+      return;
+    }
+
+    try {
+      const link = criarLinkEvento(evento);
+      const documento = await buscarUsuarioConvite(termo);
+
+      if (documento) {
+        if (documento.id === user.uid) {
+          Alert.alert('Esse e voce', 'Voce ja esta confirmado neste evento.');
+          return;
+        }
+
+        const dados = documento.data();
+        const email = String(dados.email || '').toLowerCase();
+
+        await updateDoc(doc(db, 'eventos_sociais', evento.id), {
+          convidadoUids: arrayUnion(documento.id),
+          convidados: email ? arrayUnion(email) : evento.convidados,
+          link,
+          atualizadoEm: serverTimestamp(),
+        });
+
+        await criarNotificacaoUsuario(documento.id, {
+          tipo: 'evento',
+          titulo: 'Novo convite',
+          mensagem: `${user.displayName || user.email || 'Alguem'} chamou voce para ${evento.titulo}.`,
+          eventoId: evento.id,
+          link,
+          remetenteUid: user.uid,
+        });
+
+        setConviteBusca('');
+        Alert.alert('Convite enviado', 'A pessoa recebeu o convite no app.');
+        return;
+      }
+
+      if (!isValidEmail(normalizeEmail(termo))) {
+        Alert.alert('Nao encontrei', 'Digite um email completo para convidar alguem de fora do app.');
+        return;
+      }
+
+      const email = normalizeEmail(termo);
+      await updateDoc(doc(db, 'eventos_sociais', evento.id), {
+        convidados: arrayUnion(email),
+        link,
+        atualizadoEm: serverTimestamp(),
+      });
+
+      const texto = criarTextoConvite(evento, link);
+      Alert.alert('Convite externo adicionado', 'Compartilhe o link direto com essa pessoa:', [
+        {
+          text: 'Email',
+          onPress: () =>
+            Linking.openURL(
+              `mailto:${email}?subject=${encodeURIComponent(`Convite: ${evento.titulo}`)}&body=${encodeURIComponent(texto)}`,
+            ),
+        },
+        {
+          text: 'WhatsApp',
+          onPress: () => Linking.openURL(`https://wa.me/?text=${encodeURIComponent(texto)}`),
+        },
+        { text: 'Depois', style: 'cancel' },
+      ]);
+      setConviteBusca('');
+    } catch (error) {
+      console.error('Erro ao convidar pessoa:', error);
+      Alert.alert('Erro', 'Nao foi possivel enviar esse convite agora.');
+    }
+  };
 
   const responder = async (resposta: 'aceito' | 'recusado') => {
     if (!user || !evento) return;
@@ -421,6 +553,26 @@ export default function EventoDetalhes() {
                 <MaterialIcons name="edit-calendar" size={18} color={BLUE_DARK} />
                 <Text style={styles.managerButtonText}>Editar ou remarcar</Text>
               </TouchableOpacity>
+              <View style={styles.invitePanel}>
+                <Text style={styles.inviteLabel}>Adicionar convidado</Text>
+                <View style={styles.inviteRow}>
+                  <TextInput
+                    style={styles.inviteInput}
+                    value={conviteBusca}
+                    onChangeText={setConviteBusca}
+                    placeholder="Nome, email do app ou email externo"
+                    placeholderTextColor="#667085"
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                  <TouchableOpacity style={styles.inviteButton} onPress={convidarPessoa}>
+                    <MaterialIcons name="person-add-alt" size={19} color="#FFFFFF" />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.inviteHelp}>
+                  Usuario do app recebe notificacao. Email externo recebe o link direto para compartilhar.
+                </Text>
+              </View>
               {!estaCancelado && (
                 <TouchableOpacity style={styles.dangerButton} onPress={cancelarEvento}>
                   <MaterialIcons name="event-busy" size={18} color="#9F1239" />
@@ -624,6 +776,38 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   managerButtonText: { color: BLUE_DARK, fontWeight: '800' },
+  invitePanel: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#F8FCFF',
+    padding: 10,
+  },
+  inviteLabel: { color: INK, fontWeight: '800', marginBottom: 8 },
+  inviteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inviteInput: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    color: INK,
+  },
+  inviteButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: BLUE_DARK,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteHelp: { color: '#4B5563', fontSize: 12, lineHeight: 17, marginTop: 8 },
   dangerButton: {
     minHeight: 44,
     borderRadius: 8,

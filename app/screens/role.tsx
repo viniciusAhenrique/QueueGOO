@@ -395,6 +395,13 @@ export default function RoleScreen() {
       }
 
       const restaurante = sortear(opcoes);
+      setGrupos((atuais) =>
+        atuais.map((grupo) =>
+          grupo.id === grupoSelecionadoId
+            ? { ...grupo, restauranteSorteado: restaurante }
+            : grupo,
+        ),
+      );
       await updateDoc(doc(db, COLLECTION, grupoSelecionadoId), {
         restauranteSorteado: restaurante,
         atualizadoEm: serverTimestamp(),

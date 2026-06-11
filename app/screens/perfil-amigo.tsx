@@ -108,6 +108,21 @@ export default function PerfilAmigoScreen() {
     );
   };
 
+  const convidarParaEvento = () => {
+    if (!perfil) return;
+
+    router.push({
+      pathname: '/screens/social' as never,
+      params: {
+        novoEvento: '1',
+        convidarUid: perfil.uid,
+        convidarNome: perfil.nome,
+        convidarEmail: perfil.email,
+        convidarFoto: perfil.fotoUrl || '',
+      },
+    });
+  };
+
   if (!usuario) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -165,6 +180,10 @@ export default function PerfilAmigoScreen() {
             <TouchableOpacity style={styles.chatButton} onPress={abrirChat}>
               <MaterialIcons name="chat-bubble-outline" size={17} color="#FFFFFF" />
               <Text style={styles.chatButtonText}>Conversar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.inviteButton} onPress={convidarParaEvento}>
+              <MaterialIcons name="event-available" size={17} color={BLUE_DARK} />
+              <Text style={styles.inviteButtonText}>Convidar para evento</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -267,6 +286,19 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   chatButtonText: { color: '#FFFFFF', fontFamily: 'Urbanist_700Bold', fontSize: 14 },
+  inviteButton: {
+    marginTop: 8,
+    minHeight: 40,
+    borderRadius: 8,
+    backgroundColor: '#E3F2FD',
+    borderWidth: 1,
+    borderColor: '#B3E5FC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  inviteButtonText: { color: BLUE_DARK, fontFamily: 'Urbanist_700Bold', fontSize: 14 },
   postsHeader: {
     marginTop: 16,
     marginHorizontal: 18,
