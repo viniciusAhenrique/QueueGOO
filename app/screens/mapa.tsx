@@ -25,6 +25,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '@/firebaseconfig';
 import BalaoRestaurante from '../components/modalRestaurante';
 import {
+  aquecerRestaurantesProximos,
   buscarLotacaoAtual,
   buscarRestaurantesPorTexto,
   buscarRestaurantesProximos,
@@ -259,6 +260,8 @@ export default function MapaComTudo() {
   });
   const filtroMapaRef = useRef(filtroMapa);
   const raioMapaRef = useRef(raioMapa);
+  const lugaresRef = useRef<Restaurante[]>([]);
+  const buscaMapaSeq = useRef(0);
   // Começa como `null` até existir uma posição anterior para comparação de distância.
   // Referencia atualizada para o novo nome do tipo Coordenadas.
   const ultimaPosicaoBuscada = useRef<Coordenadas | null>(null);
@@ -396,6 +399,10 @@ export default function MapaComTudo() {
   useEffect(() => onAuthStateChanged(auth, setAuthUser), []);
 
   useEffect(() => {
+    lugaresRef.current = lugares;
+  }, [lugares]);
+
+  useEffect(() => {
     if (!authUser) {
       setNotificacoesPendentes(0);
       return undefined;
@@ -418,16 +425,42 @@ export default function MapaComTudo() {
   }, [authUser]);
 
   useEffect(() => {
-    if (!authUser) return;
+    if (!authUser) return undefined;
 
     const interval = setInterval(() => {
-      atualizarLotacoes();
+      atualizarLotacoes(lugaresRef.current);
     }, 120000);
 
     return () => clearInterval(interval);
-  // atualizarLotacoes usa o snapshot atual de `lugares`; incluir a funcao recriaria o intervalo a cada render.
+  // atualizarLotacoes usa refs para evitar recriar intervalos a cada render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authUser, lugares]);
+  }, [authUser]);
+
+  useEffect(() => {
+    if (!userLocation) return undefined;
+
+    const interval = setInterval(() => {
+      atualizarQmesaNoMapa(userLocation.latitude, userLocation.longitude);
+    }, 45000);
+
+    return () => clearInterval(interval);
+  // atualizarQmesaNoMapa le filtros por ref para manter o intervalo estavel.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation?.latitude, userLocation?.longitude]);
+
+  useEffect(() => {
+    if (!authUser || !userLocation) return undefined;
+
+    aquecerCatalogoProximo(userLocation.latitude, userLocation.longitude);
+
+    const interval = setInterval(() => {
+      aquecerCatalogoProximo(userLocation.latitude, userLocation.longitude);
+    }, 300000);
+
+    return () => clearInterval(interval);
+  // aquecerCatalogoProximo le filtros por ref e respeita cache no backend.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser, userLocation?.latitude, userLocation?.longitude]);
 
   useEffect(() => {
     filtroMapaRef.current = filtroMapa;
@@ -449,7 +482,7 @@ export default function MapaComTudo() {
     buscarGooglePlaces(userLocation.latitude, userLocation.longitude);
   // buscarGooglePlaces le filtros via refs para evitar chamadas duplicadas durante digitacao/mudanca de raio.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtroMapa, raioMapa, userLocation?.latitude, userLocation?.longitude]);
+  }, [filtroMapa, raioMapa]);
 
   useEffect(() => {
     const restauranteRole = montarRestauranteDoRole();
@@ -563,6 +596,7 @@ export default function MapaComTudo() {
   }, []);
 
   const buscarGooglePlaces = async (latitude: number, longitude: number) => {
+    const buscaId = ++buscaMapaSeq.current;
     setLoading(true);
     try {
       const filtro = filtroMapaRef.current.trim();
@@ -620,32 +654,26 @@ export default function MapaComTudo() {
         ...restaurantesExternos,
       ]);
 
-      const restaurantesComLotacao = await Promise.all(
-        restaurantesFiltradosBase.map(async (restaurante) => ({
-          ...restaurante,
-          lotacao:
-            restaurante.lotacao !== null ? restaurante.lotacao : await buscarLotacao(restaurante.id),
-        })),
-      );
-
-      const totalComLotacao = restaurantesComLotacao.filter(
-        (restaurante) => restaurante.lotacao !== null,
-      ).length;
-      console.info(
-        `Lotacao carregada para ${totalComLotacao}/${restaurantesComLotacao.length} restaurantes.`,
-      );
-
       const restauranteRole = montarRestauranteDoRole();
       const restaurantesComRole =
-        restauranteRole && !restaurantesComLotacao.some((item) => item.id === restauranteRole.id)
-          ? [restauranteRole, ...restaurantesComLotacao]
-          : restaurantesComLotacao;
+        restauranteRole && !restaurantesFiltradosBase.some((item) => item.id === restauranteRole.id)
+          ? [restauranteRole, ...restaurantesFiltradosBase]
+          : restaurantesFiltradosBase;
+
+      if (buscaMapaSeq.current !== buscaId) return;
 
       setLugares(restaurantesComRole);
+      setLoading(false);
+      atualizarLotacoes(restaurantesComRole, buscaId);
     } catch (e) {
       console.error('Erro ao buscar lugares:', e);
+      if (buscaMapaSeq.current === buscaId) {
+        setLoading(false);
+      }
     } finally {
-      setLoading(false);
+      if (buscaMapaSeq.current === buscaId) {
+        setLoading(false);
+      }
     }
   };
 
@@ -747,17 +775,83 @@ export default function MapaComTudo() {
     }
   };
 
-  const atualizarLotacoes = async () => {
-    if (lugares.length === 0) return;
+  const atualizarLotacoes = async (base = lugaresRef.current, buscaId?: number) => {
+    if (base.length === 0) return;
 
     const lugaresAtualizados = await Promise.all(
-      lugares.map(async (lugar) => ({
+      base.map(async (lugar) => ({
         ...lugar,
         lotacao: lugar.origemQmesa && lugar.lotacao !== null ? lugar.lotacao : await buscarLotacao(lugar.id),
       })),
     );
 
+    if (buscaId && buscaMapaSeq.current !== buscaId) return;
     setLugares(lugaresAtualizados);
+  };
+
+  const atualizarQmesaNoMapa = async (latitude: number, longitude: number) => {
+    try {
+      const qmesaAtualizados = await buscarRestaurantesQmesa(
+        latitude,
+        longitude,
+        raioMapaRef.current,
+        filtroMapaRef.current.trim(),
+      );
+      if (!qmesaAtualizados.length) return;
+
+      setLugares((atuais) => {
+        const porId = new Map(qmesaAtualizados.map((item) => [item.id, item]));
+        const atualizados = atuais.map((item) => porId.get(item.id) || item);
+        const idsAtuais = new Set(atualizados.map((item) => item.id));
+        const novos = qmesaAtualizados.filter((item) => !idsAtuais.has(item.id));
+        return deduplicarRestaurantesMapa([...novos, ...atualizados]);
+      });
+    } catch (error) {
+      console.warn('Refresh Qmesa ignorado:', error);
+    }
+  };
+
+  const aquecerCatalogoProximo = async (latitude: number, longitude: number) => {
+    try {
+      const filtro = filtroMapaRef.current.trim();
+      const resposta = await aquecerRestaurantesProximos(
+        latitude,
+        longitude,
+        raioMapaRef.current,
+        filtro || undefined,
+      );
+
+      if (__DEV__) {
+        console.info('[Catalogo] aquecimento restaurantes:', {
+          status: resposta.status,
+          salvos: resposta.salvos,
+          motivo: resposta.motivo || null,
+        });
+      }
+
+      if (resposta.status === 'desativado') {
+        console.warn('[Catalogo] Google Places desativado no backend:', resposta.motivo);
+        return;
+      }
+
+      const novos = (resposta.resultados || [])
+        .filter((item) => item.google_place_id && item.latitude !== undefined && item.longitude !== undefined)
+        .map((item) => ({
+          id: item.google_place_id,
+          nome: item.nome,
+          tipo: item.tipos?.some((tipo) => tipo.includes('supermarket')) ? 'Mercado' : 'Restaurante',
+          latitude: item.latitude,
+          longitude: item.longitude,
+          foto: item.foto_url || null,
+          lotacao: null,
+        }));
+
+      if (!novos.length) return;
+
+      setLugares((atuais) => deduplicarRestaurantesMapa([...atuais, ...novos]));
+    } catch (error) {
+      console.warn('Aquecimento de catalogo ignorado:', error);
+    }
   };
 
   return (

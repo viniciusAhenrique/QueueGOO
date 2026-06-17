@@ -81,6 +81,25 @@ async def buscar_restaurantes(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
 
 
+@router.post("/aquecer")
+async def aquecer_restaurantes_proximos(
+    lat:             float = Query(..., description="Latitude do usuario"),
+    lng:             float = Query(..., description="Longitude do usuario"),
+    raio:            int   = Query(1500, description="Raio em metros"),
+    tipo_culinaria:  str   = Query(None, description="Filtro por tipo ex: pizza, sushi"),
+    limite:          int   = Query(5, ge=1, le=5, description="Maximo de restaurantes a salvar"),
+    _                = Depends(verificar_token),
+):
+    """
+    Aquecimento leve de catalogo. Busca ate 5 restaurantes no Google e salva no Supabase.
+    Protegido por cache interno de 5 minutos por area/filtro.
+    """
+    try:
+        return await google_service.aquecer_google_proximos(lat, lng, raio, tipo_culinaria, limite)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+
+
 @router.get("/geocodificar")
 async def geocodificar(
     endereco: str = Query(...),

@@ -103,6 +103,33 @@ export async function buscarRestaurantesPorTexto(
   return apiFetch<RestauranteResumo[]>(`/restaurantes/buscar?${params.toString()}`);
 }
 
+export async function aquecerRestaurantesProximos(
+  latitude: number,
+  longitude: number,
+  raio = 1500,
+  tipoCulinaria?: string,
+) {
+  const params = new URLSearchParams({
+    lat: String(latitude),
+    lng: String(longitude),
+    raio: String(raio),
+    limite: '5',
+  });
+
+  if (tipoCulinaria) {
+    params.set('tipo_culinaria', tipoCulinaria);
+  }
+
+  return apiFetch<{
+    status: 'ok' | 'cache' | 'desativado';
+    salvos: number;
+    google_places_enabled?: boolean;
+    google_key_configurada?: boolean;
+    motivo?: string;
+    resultados?: RestauranteResumo[];
+  }>(`/restaurantes/aquecer?${params.toString()}`, { method: 'POST' });
+}
+
 export async function buscarDetalhesRestaurante(placeId: string) {
   return apiFetch<RestauranteDetalhesApi>(`/restaurantes/google/${encodeURIComponent(placeId)}`);
 }

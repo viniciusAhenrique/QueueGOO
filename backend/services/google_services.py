@@ -130,6 +130,59 @@ async def buscar_restaurantes_proximos(lat: float, lng: float, raio_metros: int 
     return resultados_atualizados or resultados_google
 
 
+async def aquecer_google_proximos(
+    lat: float,
+    lng: float,
+    raio_metros: int = 1500,
+    tipo_culinaria: str = None,
+    limite: int = 5,
+) -> dict:
+    """
+    Busca controlada para enriquecer o catalogo em segundo plano.
+    So chama Google se GOOGLE_PLACES_FALLBACK_ENABLED=true e respeita TTL por area/filtro.
+    """
+    limite_seguro = max(1, min(limite, 5))
+    chave_refresh = _chave_refresh_google(lat, lng, raio_metros, f"warmup:{tipo_culinaria or 'proximos'}")
+
+    if not GOOGLE_PLACES_FALLBACK_ENABLED or not GOOGLE_API_KEY:
+        return {
+            "status": "desativado",
+            "salvos": 0,
+            "google_places_enabled": GOOGLE_PLACES_FALLBACK_ENABLED,
+            "google_key_configurada": bool(GOOGLE_API_KEY),
+            "motivo": "GOOGLE_PLACES_FALLBACK_ENABLED=false ou GOOGLE_API_KEY ausente.",
+        }
+
+    ultima = _google_refresh_cache.get(chave_refresh)
+    if ultima and datetime.now(timezone.utc) - ultima <= timedelta(minutes=5):
+        return {
+            "status": "cache",
+            "salvos": 0,
+            "google_places_enabled": GOOGLE_PLACES_FALLBACK_ENABLED,
+            "google_key_configurada": bool(GOOGLE_API_KEY),
+            "motivo": "Aquecimento ja executado recentemente para esta area.",
+        }
+
+    try:
+        resultados_google = await _buscar_google_restaurantes_proximos(
+            lat,
+            lng,
+            raio_metros,
+            tipo_culinaria,
+        )
+        selecionados = resultados_google[:limite_seguro]
+        place_catalog_service.salvar_resultados_google(selecionados)
+        return {
+            "status": "ok",
+            "salvos": len(selecionados),
+            "google_places_enabled": GOOGLE_PLACES_FALLBACK_ENABLED,
+            "google_key_configurada": bool(GOOGLE_API_KEY),
+            "resultados": selecionados,
+        }
+    finally:
+        _registrar_refresh_google(chave_refresh)
+
+
 async def _buscar_google_restaurantes_proximos(lat: float, lng: float, raio_metros: int = 1500, tipo_culinaria: str = None) -> list:
     tipos_busca = ["supermarket"] if _filtro_mercado(tipo_culinaria) else ["restaurant"]
     resultados_por_place_id = {}
